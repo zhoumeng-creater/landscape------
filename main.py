@@ -27,7 +27,7 @@ from training.pretrain import optimized_pretrain_ijepa
 from training.finetune import optimized_finetune_classifier
 
 # 导入评估和可视化
-from utils.evaluation import evaluate_optimized_model, print_model_summary
+from utils.evaluation import evaluate_optimized_model, print_evaluation_results
 from utils.visualization import (
     plot_enhanced_learning_curves, plot_pretrain_curves,
     plot_confusion_matrix, plot_class_distribution
@@ -118,7 +118,7 @@ def main():
     )
     
     # 打印模型信息
-    print_model_summary(ijepa_model, classifier)
+    print_evaluation_results(ijepa_model, classifier)
     
     # ===== 阶段1: I-JEPA预训练 =====
     print("\n" + "🚀"*20)

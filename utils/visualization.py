@@ -182,8 +182,8 @@ def plot_class_distribution(labels, class_names, save_path=None):
     """绘制类别分布图
     
     Args:
-        labels: 标签列表
-        class_names: 类别名称
+        labels: 标签列表（可以是字符串或整数）
+        class_names: 类别名称列表
         save_path: 保存路径（可选）
     """
     # 统计类别分布
@@ -199,15 +199,25 @@ def plot_class_distribution(labels, class_names, save_path=None):
         bar.set_color(color)
     
     # 添加数值标签
-    for i, (cls, count) in enumerate(zip(unique, counts)):
+    for i, count in enumerate(counts):
         plt.text(i, count + max(counts)*0.01, str(count), 
                 ha='center', va='bottom', fontsize=10)
     
     plt.title('各园林类别图像数量分布', fontsize=14, fontweight='bold')
     plt.xlabel('园林类别', fontsize=12)
     plt.ylabel('图像数量', fontsize=12)
-    plt.xticks(range(len(unique)), [class_names[i] for i in unique], 
-               rotation=45, ha='right')
+    
+    # 处理x轴标签
+    # 如果labels是字符串，unique也是字符串，直接使用
+    # 如果labels是整数（编码后的），需要用class_names解码
+    if isinstance(unique[0], (int, np.integer)):
+        # labels是编码后的整数
+        x_labels = [class_names[i] for i in unique]
+    else:
+        # labels是原始字符串
+        x_labels = unique
+    
+    plt.xticks(range(len(unique)), x_labels, rotation=45, ha='right')
     
     # 添加平均线
     mean_count = np.mean(counts)

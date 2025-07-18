@@ -15,7 +15,7 @@ class Config:
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # 数据路径
-    DATA_PATH = '/kaggle/input/yuanlin2/yuanlin_dataset'
+    DATA_PATH = '/kaggle/input/yuanlin-dataset/yuanlin_dataset'
     
     # 保存路径
     CHECKPOINT_DIR = './checkpoints'

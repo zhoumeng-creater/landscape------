@@ -117,8 +117,6 @@ def main():
         dropout=Config.CLASSIFIER_DROPOUT
     )
     
-    # 打印模型信息
-    print_evaluation_results(results, label_encoder)
     
     # ===== 阶段1: I-JEPA预训练 =====
     print("\n" + "🚀"*20)

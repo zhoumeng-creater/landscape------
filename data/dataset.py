@@ -227,20 +227,20 @@ def create_dataloader(dataset, batch_size=32, shuffle=True, num_workers=2):
     return dataloader
 
 
-def create_optimized_context_and_target_patches(batch_size, n_patches, mask_ratio=0.75):
-    """优化的掩码策略 - 使用块状掩码
-    
-    生成用于I-JEPA预训练的上下文和目标patches
+def create_progressive_mask_strategy(batch_size, n_patches, epoch, max_epochs, 
+                                   min_ratio=0.6, max_ratio=0.8):
+    """渐进式掩码策略 - 随训练进程增加难度
     
     Args:
-        batch_size: 批次大小
-        n_patches: 总patch数量
-        mask_ratio: 掩码比例
-        
-    Returns:
-        context_patches_list: 每个样本的可见patch索引
-        target_patches_list: 每个样本的目标patch索引
+        epoch: 当前轮次
+        max_epochs: 总轮数
+        min_ratio: 最小掩码比例
+        max_ratio: 最大掩码比例
     """
+    # 动态调整掩码比例
+    progress = epoch / max_epochs
+    mask_ratio = min_ratio + (max_ratio - min_ratio) * progress
+    
     context_patches_list = []
     target_patches_list = []
     
@@ -248,44 +248,41 @@ def create_optimized_context_and_target_patches(batch_size, n_patches, mask_rati
     grid_size = int(n_patches ** 0.5)
     
     for _ in range(batch_size):
-        # 创建连续的掩码块
         masked_patches = set()
         
-        # 选择2-4个掩码中心
-        num_centers = random.randint(2, 4)
-        centers = random.sample(range(n_patches), min(num_centers, n_patches))
+        # 策略1: 块状掩码 (70%概率)
+        if random.random() < 0.7:
+            num_centers = random.randint(2, min(5, int(3 + progress * 2)))
+            centers = random.sample(range(n_patches), num_centers)
+            
+            for center in centers:
+                row, col = center // grid_size, center % grid_size
+                # 动态块大小
+                block_size = random.randint(1, min(3, int(2 + progress)))
+                
+                for dr in range(-block_size, block_size + 1):
+                    for dc in range(-block_size, block_size + 1):
+                        new_row, new_col = row + dr, col + dc
+                        if 0 <= new_row < grid_size and 0 <= new_col < grid_size:
+                            patch_idx = new_row * grid_size + new_col
+                            masked_patches.add(patch_idx)
         
-        for center in centers:
-            row, col = center // grid_size, center % grid_size
-            # 创建3x3或2x2的掩码块
-            block_size = random.randint(1, 2)
-            for dr in range(-block_size, block_size + 1):
-                for dc in range(-block_size, block_size + 1):
-                    new_row, new_col = row + dr, col + dc
-                    if 0 <= new_row < grid_size and 0 <= new_col < grid_size:
-                        patch_idx = new_row * grid_size + new_col
-                        masked_patches.add(patch_idx)
+        # 策略2: 随机掩码 (30%概率) - 增加难度
+        else:
+            masked_patches = set(random.sample(range(n_patches), mask_count))
         
-        # 调整到目标掩码数量
-        masked_patches = list(masked_patches)
-        if len(masked_patches) > mask_count:
-            masked_patches = random.sample(masked_patches, mask_count)
-        elif len(masked_patches) < mask_count:
-            # 随机添加更多掩码
+        # 确保掩码数量
+        masked_patches = list(masked_patches)[:mask_count]
+        if len(masked_patches) < mask_count:
             remaining = [i for i in range(n_patches) if i not in masked_patches]
-            additional = random.sample(
-                remaining, 
-                min(mask_count - len(masked_patches), len(remaining))
-            )
+            additional = random.sample(remaining, mask_count - len(masked_patches))
             masked_patches.extend(additional)
         
-        # 生成上下文patches（可见的）
         context_patches = [i for i in range(n_patches) if i not in masked_patches]
-        
         context_patches_list.append(sorted(context_patches))
-        # 随机选择一个掩码patch作为预测目标
-        target_patches_list.append(
-            random.choice(masked_patches) if masked_patches else 0
-        )
+        
+        # 选择多个目标patches进行预测
+        num_targets = min(4, len(masked_patches))
+        target_patches_list.append(random.sample(masked_patches, num_targets))
     
     return context_patches_list, target_patches_list

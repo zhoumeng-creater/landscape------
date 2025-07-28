@@ -34,7 +34,7 @@ class AdvancedContextEncoder(nn.Module):
         
         self.norm = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(0.1)
-        
+    
         # 特征增强层
         self.feature_enhancer = nn.Sequential(
             nn.Linear(embed_dim, embed_dim * 2),
@@ -46,7 +46,16 @@ class AdvancedContextEncoder(nn.Module):
         # 初始化权重
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
         nn.init.trunc_normal_(self.cls_token, std=0.02)
+
+        # 添加特征融合层
+        self.fusion_layers = nn.ModuleList([
+            nn.Linear(embed_dim * 2, embed_dim) 
+            for _ in range(depth // 3)  # 每3层一个融合
+        ])
         
+        # 保存中间特征
+        self.intermediate_features = []
+
     def forward(self, x, context_patches=None):
         B = x.shape[0]
         
@@ -97,9 +106,24 @@ class AdvancedContextEncoder(nn.Module):
         
         x = self.dropout(x)
         
-        # 通过Transformer层
-        for block in self.blocks:
+        # 通过Transformer层，带特征融合
+        self.intermediate_features = []
+        
+        for i, block in enumerate(self.blocks):
             x = block(x)
+            
+            # 保存中间特征
+            if i % 3 == 2 and i < len(self.blocks) - 1:
+                self.intermediate_features.append(x)
+            
+            # 深层特征融合
+            if i % 3 == 2 and len(self.intermediate_features) > 1:
+                fusion_idx = i // 3 - 1
+                if fusion_idx < len(self.fusion_layers):
+                    # 融合当前特征和早期特征
+                    early_feat = self.intermediate_features[-2]
+                    fused = torch.cat([x, early_feat], dim=-1)
+                    x = x + self.fusion_layers[fusion_idx](fused)
         
         x = self.norm(x)
         

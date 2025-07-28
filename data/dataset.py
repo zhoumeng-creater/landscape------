@@ -10,14 +10,15 @@ import torch
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-
+import torch.multiprocessing as mp
+from functools import lru_cache
 
 class OptimizedGardenDataset(Dataset):
     """优化的园林数据集类
     
     支持预训练和微调两种模式
     """
-    def __init__(self, image_paths, labels=None, transform=None, is_pretraining=False):
+    def __init__(self, image_paths, labels=None, transform=None, is_pretraining=False, cache_size=1000):
         """
         Args:
             image_paths: 图像路径列表
@@ -29,6 +30,15 @@ class OptimizedGardenDataset(Dataset):
         self.labels = labels
         self.transform = transform
         self.is_pretraining = is_pretraining
+        self.cache_size = cache_size
+
+        mp.set_sharing_strategy('file_system')
+
+    @lru_cache(maxsize=1000)  # 缓存最近访问的图像
+    def _load_image(self, path):
+        """缓存图像加载"""
+        return Image.open(path).convert('RGB')
+
     
     def __len__(self):
         return len(self.image_paths)
@@ -36,7 +46,7 @@ class OptimizedGardenDataset(Dataset):
     def __getitem__(self, idx):
         try:
             # 加载图像
-            image = Image.open(self.image_paths[idx]).convert('RGB')
+            image = self._load_image(self.image_paths[idx])
             
             # 应用数据变换
             if self.transform:
@@ -50,8 +60,15 @@ class OptimizedGardenDataset(Dataset):
                 return image, label
                 
         except Exception as e:
-            print(f"Error loading image {self.image_paths[idx]}: {e}")
-            # 返回一个默认图像
+            # 更详细的错误处理
+            if isinstance(e, FileNotFoundError):
+                print(f"File not found: {self.image_paths[idx]}")
+            elif isinstance(e, PermissionError):
+                print(f"Permission denied: {self.image_paths[idx]}")
+            else:
+                print(f"Unexpected error loading {self.image_paths[idx]}: {e}")
+            
+            # 返回默认图像
             default_image = Image.new('RGB', (224, 224), (255, 255, 255))
             if self.transform:
                 default_image = self.transform(default_image)

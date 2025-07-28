@@ -128,38 +128,54 @@ class TargetEncoder(nn.Module):
         return self.encoder(x)
 
 
-class Predictor(nn.Module):
-    """I-JEPA预测器
-    
-    基于上下文信息预测目标patch的表示
-    """
+class ImprovedPredictor(nn.Module):
+    """改进的预测器 - 使用交叉注意力和空间感知"""
     def __init__(self, embed_dim=768, predictor_depth=6, n_heads=12):
         super().__init__()
         
-        # 使用较浅的Transformer结构
-        self.blocks = nn.ModuleList([
+        # 使用编码器-解码器架构
+        self.encoder_blocks = nn.ModuleList([
             ImprovedTransformerBlock(embed_dim, n_heads)
-            for _ in range(predictor_depth)
+            for _ in range(predictor_depth // 2)
         ])
+        
+        # 交叉注意力层
+        self.cross_attention = nn.ModuleList([
+            nn.MultiheadAttention(embed_dim, n_heads, batch_first=True)
+            for _ in range(predictor_depth // 2)
+        ])
+        
+        self.decoder_blocks = nn.ModuleList([
+            ImprovedTransformerBlock(embed_dim, n_heads)
+            for _ in range(predictor_depth // 2)
+        ])
+        
+        # 空间位置编码
+        self.spatial_pos_embed = nn.Parameter(torch.randn(1, 196, embed_dim))
         
         self.norm = nn.LayerNorm(embed_dim)
         
-    def forward(self, x, target_patches):
-        # 通过Transformer层
-        for block in self.blocks:
+    def forward(self, context_features, target_positions):
+        batch_size = context_features.size(0)
+        
+        # 编码上下文
+        x = context_features
+        for block in self.encoder_blocks:
             x = block(x)
         
-        x = self.norm(x)
+        # 为目标位置创建查询
+        num_targets = len(target_positions[0]) if isinstance(target_positions[0], list) else 1
+        target_queries = self.spatial_pos_embed[:, target_positions[0], :].expand(batch_size, -1, -1)
         
-        # 使用CLS token作为全局上下文进行预测
-        batch_size = x.size(0)
-        predictions = []
+        # 交叉注意力预测
+        for cross_attn, decoder in zip(self.cross_attention, self.decoder_blocks):
+            # 交叉注意力：目标查询关注上下文
+            target_queries, _ = cross_attn(target_queries, x, x)
+            # 自注意力refinement
+            target_queries = decoder(target_queries)
         
-        for i in range(batch_size):
-            cls_token = x[i, 0]
-            predictions.append(cls_token)
-        
-        return torch.stack(predictions)
+        predictions = self.norm(target_queries)
+        return predictions
 
 
 def update_target_encoder(context_encoder, target_encoder, momentum=0.996):

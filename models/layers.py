@@ -215,3 +215,47 @@ class ImprovedTransformerBlock(nn.Module):
         # MLP + 层尺度 + 随机深度
         x = x + self.drop_path(self.layer_scale_2 * self.mlp(self.norm2(x)))
         return x
+    
+class RotaryPositionEmbedding(nn.Module):
+    """旋转位置编码 (RoPE)"""
+    def __init__(self, dim, max_seq_len=5000):
+        super().__init__()
+        inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
+        t = torch.arange(max_seq_len).float()
+        freqs = torch.einsum('i,j->ij', t, inv_freq)
+        self.register_buffer('sin', freqs.sin())
+        self.register_buffer('cos', freqs.cos())
+    
+    def forward(self, x):
+        # x: [batch_size, seq_len, dim]
+        seq_len = x.shape[1]
+        sin = self.sin[:seq_len, :].unsqueeze(0)
+        cos = self.cos[:seq_len, :].unsqueeze(0)
+        
+        # 旋转操作
+        x1 = x[..., 0::2]
+        x2 = x[..., 1::2]
+        x_rot = torch.stack([-x2, x1], dim=-1).flatten(-2)
+        
+        return x * cos + x_rot * sin
+
+class Position2DEmbedding(nn.Module):
+    """2D位置编码 - 考虑patch的行列位置"""
+    def __init__(self, embed_dim, grid_size):
+        super().__init__()
+        self.grid_size = grid_size
+        self.row_embed = nn.Parameter(torch.randn(grid_size, embed_dim // 2))
+        self.col_embed = nn.Parameter(torch.randn(grid_size, embed_dim // 2))
+        
+    def forward(self, x):
+        # x: [batch_size, num_patches, embed_dim]
+        batch_size, num_patches, _ = x.shape
+        
+        # 生成行列位置编码
+        pos_embed = []
+        for i in range(self.grid_size):
+            for j in range(self.grid_size):
+                pos_embed.append(torch.cat([self.row_embed[i], self.col_embed[j]]))
+        
+        pos_embed = torch.stack(pos_embed).unsqueeze(0).expand(batch_size, -1, -1)
+        return x + pos_embed

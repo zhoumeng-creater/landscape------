@@ -6,20 +6,44 @@ import torch.nn as nn
 import torch.nn.functional as F
 from config import Config
 
-
-def compute_enhanced_loss(predictions, targets):
-    """增强的损失函数 - 多任务学习
-    
-    结合多种损失函数来提高预训练效果
-    
-    Args:
-        predictions: 预测的表示 [B, D]
-        targets: 目标表示 [B, D]
+class DynamicLossWeights(nn.Module):
+    """动态调整损失权重"""
+    def __init__(self, num_losses=4):
+        super().__init__()
+        self.num_losses = num_losses
+        # 可学习的权重参数
+        self.loss_weights = nn.Parameter(torch.ones(num_losses))
         
-    Returns:
-        total_loss: 总损失
-        cosine_sim: 平均余弦相似度（用于监控）
-    """
+    def forward(self, losses, epoch=0, max_epochs=100):
+        # 使用softmax确保权重和为1
+        weights = F.softmax(self.loss_weights, dim=0) * self.num_losses
+        
+        # 基于训练进度的权重调整
+        progress = epoch / max_epochs
+        
+        # 早期更关注基础损失，后期关注辅助损失
+        base_weight = 1.0 - 0.3 * progress
+        aux_weight = 0.3 + 0.3 * progress
+        
+        # 调整权重
+        adjusted_weights = torch.tensor([
+            base_weight,      # cosine loss
+            aux_weight * 0.5, # diversity loss  
+            aux_weight * 0.3, # l2 loss
+            aux_weight * 0.2  # contrastive loss
+        ]).to(weights.device)
+        
+        # 结合可学习权重和策略权重
+        final_weights = weights * adjusted_weights
+        final_weights = final_weights / final_weights.sum()
+        
+        # 计算加权损失
+        total_loss = sum(w * l for w, l in zip(final_weights, losses))
+        
+        return total_loss, final_weights
+
+def compute_enhanced_loss(predictions, targets, loss_weight_module=None, epoch=0):
+    """增强的损失函数 - 支持动态权重"""
     # 归一化
     predictions_norm = F.normalize(predictions, dim=-1)
     targets_norm = F.normalize(targets, dim=-1)
@@ -28,33 +52,32 @@ def compute_enhanced_loss(predictions, targets):
     cosine_sim = F.cosine_similarity(predictions_norm, targets_norm)
     cosine_loss = -cosine_sim.mean()
     
-    # 2. 特征多样性损失（防止模式坍塌）
+    # 2. 特征多样性损失
     pred_std = torch.std(predictions_norm, dim=0).mean()
     target_std = torch.std(targets_norm, dim=0).mean()
     diversity_loss = -torch.log(pred_std + 1e-6) - torch.log(target_std + 1e-6)
     
-    # 3. L2距离损失（特征对齐）
+    # 3. L2距离损失
     l2_loss = F.mse_loss(predictions_norm, targets_norm)
     
-    # 4. 对比学习损失（如果batch_size > 1）
-    contrastive_loss = 0
+    # 4. 对比学习损失
     if predictions.size(0) > 1:
-        try:
-            # 计算batch内的相似度矩阵
-            sim_matrix = torch.mm(predictions_norm, predictions_norm.t())
-            target_sim_matrix = torch.mm(targets_norm, targets_norm.t())
-            # 对齐两个相似度矩阵
-            contrastive_loss = F.mse_loss(sim_matrix, target_sim_matrix)
-        except:
-            contrastive_loss = 0
+        sim_matrix = torch.mm(predictions_norm, predictions_norm.t())
+        target_sim_matrix = torch.mm(targets_norm, targets_norm.t())
+        contrastive_loss = F.mse_loss(sim_matrix, target_sim_matrix)
+    else:
+        contrastive_loss = torch.tensor(0.0).to(predictions.device)
     
-    # 组合损失（使用配置中的权重）
-    total_loss = (cosine_loss + 
-                 Config.DIVERSITY_WEIGHT * diversity_loss + 
-                 Config.L2_WEIGHT * l2_loss + 
-                 Config.CONTRASTIVE_WEIGHT * contrastive_loss)
+    losses = [cosine_loss, diversity_loss, l2_loss, contrastive_loss]
     
-    return total_loss, cosine_sim.mean()
+    if loss_weight_module is not None:
+        total_loss, weights = loss_weight_module(losses, epoch)
+    else:
+        # 使用固定权重
+        total_loss = cosine_loss + 0.15*diversity_loss + 0.1*l2_loss + 0.05*contrastive_loss
+        weights = torch.tensor([1.0, 0.15, 0.1, 0.05])
+    
+    return total_loss, cosine_sim.mean(), weights
 
 
 class FocalLoss(nn.Module):

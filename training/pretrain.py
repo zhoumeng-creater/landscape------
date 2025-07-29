@@ -64,7 +64,7 @@ def create_scheduler(optimizer, num_epochs, warmup_epochs):
     return scheduler
 
 
-def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=100):
+def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=100, loss_weight_module=None, loss_history=None):
     """训练一个epoch
     
     Args:
@@ -89,9 +89,9 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
         images = images.to(device)
         batch_size = images.size(0)
         
-        # 生成掩码策略
+        # 使用渐进式掩码策略
         context_patches, target_patches = create_progressive_mask_strategy(
-            batch_size, model.n_patches, mask_ratio=Config.MASK_RATIO
+            batch_size, model.n_patches, epoch, Config.PRETRAIN_EPOCHS
         )
         
         optimizer.zero_grad()
@@ -100,8 +100,10 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
             # 前向传播
             predictions, targets = model(images, context_patches, target_patches)
             
-            # 计算损失
-            loss, cosine_sim = compute_enhanced_loss(predictions, targets)
+            # 使用动态权重计算损失
+            loss, cosine_sim, loss_weights = compute_enhanced_loss(
+                predictions, targets, loss_weight_module, epoch
+            )
             
             # 反向传播
             loss.backward()
@@ -112,35 +114,34 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
             # 优化器步骤
             optimizer.step()
             
-            # 更新目标编码器（EMA）
-            momentum = Config.EMA_MOMENTUM + (Config.EMA_MOMENTUM_END - Config.EMA_MOMENTUM) * epoch / Config.PRETRAIN_EPOCHS
-            update_target_encoder(model.context_encoder, model.target_encoder, momentum=momentum)
+            # 动态EMA更新
+            current_momentum = update_target_encoder(
+                model.context_encoder, model.target_encoder,
+                base_momentum=Config.EMA_MOMENTUM,
+                current_loss=loss.item(),
+                loss_history=loss_history
+            )
             
             # 记录指标
             epoch_loss += loss.item()
             cosine_similarities.append(cosine_sim.item())
             
-            # 计算特征多样性
-            import torch.nn.functional as F
-            pred_std = torch.std(F.normalize(predictions, dim=-1), dim=0).mean()
-            feature_stds.append(pred_std.item())
-            
             # 打印日志
             if batch_idx % log_interval == 0:
                 print(f'Epoch {epoch+1}, Batch {batch_idx}/{len(train_loader)}, '
                       f'Loss: {loss.item():.4f}, Cosine Sim: {cosine_sim.item():.4f}, '
-                      f'Feature Std: {pred_std.item():.4f}')
+                      f'Momentum: {current_momentum:.4f}')
+                print(f'Loss Weights: {loss_weights.detach().cpu().numpy()}')
                 
         except Exception as e:
             print(f"训练步骤出错: {e}")
             continue
     
-    # 计算平均值
-    avg_loss = epoch_loss / len(train_loader) if len(train_loader) > 0 else 0
-    avg_cosine_sim = np.mean(cosine_similarities) if cosine_similarities else 0
-    avg_feature_std = np.mean(feature_stds) if feature_stds else 0
+    # 返回更多信息
+    avg_loss = epoch_loss / len(train_loader)
+    avg_cosine_sim = np.mean(cosine_similarities)
     
-    return avg_loss, avg_cosine_sim, avg_feature_std
+    return avg_loss, avg_cosine_sim, loss_weights
 
 
 def optimized_pretrain_ijepa(model, train_loader, num_epochs=None, learning_rate=None):

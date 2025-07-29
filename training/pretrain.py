@@ -9,7 +9,7 @@ import math
 import os
 from config import Config
 from models.encoders import update_target_encoder
-from data.dataset import create_optimized_context_and_target_patches
+from data.dataset import create_progressive_mask_strategy
 from utils.losses import compute_enhanced_loss
 
 
@@ -90,7 +90,7 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
         batch_size = images.size(0)
         
         # 生成掩码策略
-        context_patches, target_patches = create_optimized_context_and_target_patches(
+        context_patches, target_patches = create_progressive_mask_strategy(
             batch_size, model.n_patches, mask_ratio=Config.MASK_RATIO
         )
         

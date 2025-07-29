@@ -152,7 +152,7 @@ class TargetEncoder(nn.Module):
         return self.encoder(x)
 
 
-class ImprovedPredictor(nn.Module):
+class Predictor(nn.Module):
     """改进的预测器 - 使用交叉注意力和空间感知"""
     def __init__(self, embed_dim=768, predictor_depth=6, n_heads=12):
         super().__init__()

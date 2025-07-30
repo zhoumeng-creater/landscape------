@@ -26,7 +26,7 @@ def get_optimized_transforms():
             scale=Config.PRETRAIN_AUGMENTATION['crop_scale'], 
             ratio=Config.PRETRAIN_AUGMENTATION['crop_ratio']
         ),
-        RandAugment(n=2, m=10),  # 添加RandAugment
+        # RandAugment(n=2, m=10),  # 添加RandAugment
         transforms.RandomHorizontalFlip(p=Config.PRETRAIN_AUGMENTATION['horizontal_flip_p']),
         transforms.RandomVerticalFlip(p=Config.PRETRAIN_AUGMENTATION['vertical_flip_p']),
         transforms.RandomRotation(Config.PRETRAIN_AUGMENTATION['rotation_degrees']),
@@ -198,32 +198,32 @@ class RandomCutmix:
         
         return mixed_images, labels, labels[index], lam
     
-class RandAugment:
-    """RandAugment数据增强"""
-    def __init__(self, n=2, m=10):
-        self.n = n
-        self.m = m
-        self.augment_list = [
-            (T.AutoContrast(), 0, 1),
-            (T.Equalize(), 0, 1),
-            (T.Rotate(0), -30, 30),
-            (T.Solarize(0), 0, 256),
-            (T.ColorJitter(brightness=0), 0.1, 1.9),
-            (T.ColorJitter(contrast=0), 0.1, 1.9),
-            (T.ColorJitter(saturation=0), 0.1, 1.9),
-            (T.GaussianBlur(3), 0.1, 2.0),
-        ]
+# class RandAugment:
+#     """RandAugment数据增强"""
+#     def __init__(self, n=2, m=10):
+#         self.n = n
+#         self.m = m
+#         self.augment_list = [
+#             (T.AutoContrast(), 0, 1),
+#             (T.Equalize(), 0, 1),
+#             (T.Rotate(0), -30, 30),
+#             (T.Solarize(0), 0, 256),
+#             (T.ColorJitter(brightness=0), 0.1, 1.9),
+#             (T.ColorJitter(contrast=0), 0.1, 1.9),
+#             (T.ColorJitter(saturation=0), 0.1, 1.9),
+#             (T.GaussianBlur(3), 0.1, 2.0),
+#         ]
     
-    def __call__(self, img):
-        ops = random.choices(self.augment_list, k=self.n)
-        for op, min_val, max_val in ops:
-            val = (self.m / 30) * (max_val - min_val) + min_val
-            if isinstance(op, (T.Rotate, T.Solarize)):
-                img = op(img, val)
-            elif isinstance(op, T.ColorJitter):
-                # 动态设置ColorJitter参数
-                img = op(img)
-            else:
-                img = op(img)
-        return img
+#     def __call__(self, img):
+#         ops = random.choices(self.augment_list, k=self.n)
+#         for op, min_val, max_val in ops:
+#             val = (self.m / 30) * (max_val - min_val) + min_val
+#             if isinstance(op, (T.Rotate, T.Solarize)):
+#                 img = op(img, val)
+#             elif isinstance(op, T.ColorJitter):
+#                 # 动态设置ColorJitter参数
+#                 img = op(img)
+#             else:
+#                 img = op(img)
+#         return img
 

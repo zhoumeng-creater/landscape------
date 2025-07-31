@@ -56,8 +56,9 @@ class OptimizedIJEPAModel(nn.Module):
         targets = []
         
         for i in range(batch_size):
-            if i < len(target_patches) and target_patches[i] is not None:
-                target_idx = target_patches[i]
+            if i < len(target_patches) and target_patches[i] is not None and len(target_patches[i]) > 0:
+                # target_patches[i] 是一个列表，取第一个目标patch
+                target_idx = target_patches[i][0]  # 取列表的第一个元素
                 # 考虑CLS token，所以索引要+1
                 if target_idx + 1 < target_repr.size(1):
                     target = target_repr[i, target_idx + 1]
@@ -66,6 +67,7 @@ class OptimizedIJEPAModel(nn.Module):
             else:
                 target = target_repr[i, 1]
             targets.append(target)
+
         
         targets = torch.stack(targets)
         

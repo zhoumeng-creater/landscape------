@@ -84,6 +84,7 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
     epoch_loss = 0.0
     cosine_similarities = []
     feature_stds = []
+    loss_weights = None  # 初始化 loss_weights
     
     for batch_idx, images in enumerate(train_loader):
         images = images.to(device)
@@ -114,34 +115,38 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
             # 优化器步骤
             optimizer.step()
             
-            # 动态EMA更新
-            current_momentum = update_target_encoder(
+            # 动态EMA更新 - 修正调用参数
+            update_target_encoder(
                 model.context_encoder, model.target_encoder,
-                base_momentum=Config.EMA_MOMENTUM,
-                current_loss=loss.item(),
-                loss_history=loss_history
+                momentum=Config.EMA_MOMENTUM
             )
             
             # 记录指标
             epoch_loss += loss.item()
             cosine_similarities.append(cosine_sim.item())
             
+            # 计算特征标准差
+            with torch.no_grad():
+                feature_std = predictions.std(dim=0).mean().item()
+                feature_stds.append(feature_std)
+            
             # 打印日志
             if batch_idx % log_interval == 0:
                 print(f'Epoch {epoch+1}, Batch {batch_idx}/{len(train_loader)}, '
-                      f'Loss: {loss.item():.4f}, Cosine Sim: {cosine_sim.item():.4f}, '
-                      f'Momentum: {current_momentum:.4f}')
-                print(f'Loss Weights: {loss_weights.detach().cpu().numpy()}')
+                      f'Loss: {loss.item():.4f}, Cosine Sim: {cosine_sim.item():.4f}')
+                if loss_weights is not None:
+                    print(f'Loss Weights: {loss_weights.detach().cpu().numpy()}')
                 
         except Exception as e:
             print(f"训练步骤出错: {e}")
             continue
     
     # 返回更多信息
-    avg_loss = epoch_loss / len(train_loader)
-    avg_cosine_sim = np.mean(cosine_similarities)
+    avg_loss = epoch_loss / len(train_loader) if len(train_loader) > 0 else 0.0
+    avg_cosine_sim = np.mean(cosine_similarities) if cosine_similarities else 0.0
+    avg_feature_std = np.mean(feature_stds) if feature_stds else 0.0
     
-    return avg_loss, avg_cosine_sim, loss_weights
+    return avg_loss, avg_cosine_sim, avg_feature_std
 
 
 def optimized_pretrain_ijepa(model, train_loader, num_epochs=None, learning_rate=None):

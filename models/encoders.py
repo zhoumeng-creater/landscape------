@@ -62,31 +62,53 @@ class AdvancedContextEncoder(nn.Module):
         # 分块嵌入
         x = self.patch_embed(x)
         
-        # ... 处理上下文patches的代码 ...
+        # 处理上下文patches
+        if context_patches is not None:
+            context_x = []
+            context_pos = []
+            max_len = 0
+            
+            for i in range(B):
+                if len(context_patches[i]) > 0 and max(context_patches[i]) < x.shape[1]:
+                    patches = x[i, context_patches[i]]
+                    pos_embed = self.pos_embed[0, context_patches[i]]
+                    context_x.append(patches)
+                    context_pos.append(pos_embed)
+                    max_len = max(max_len, len(patches))
+                else:
+                    # 如果上下文patches无效，使用所有patches
+                    context_x.append(x[i])
+                    context_pos.append(self.pos_embed[0])
+                    max_len = max(max_len, x.shape[1])
+            
+            # 填充到相同长度
+            padded_x = []
+            padded_pos = []
+            
+            for ctx, pos in zip(context_x, context_pos):
+                if len(ctx) < max_len:
+                    padding_len = max_len - len(ctx)
+                    padding = torch.zeros(padding_len, ctx.shape[-1], device=ctx.device)
+                    ctx = torch.cat([ctx, padding], dim=0)
+                    pos = torch.cat([pos, padding], dim=0)
+                padded_x.append(ctx)
+                padded_pos.append(pos)
+            
+            x = torch.stack(padded_x)
+            pos_embed = torch.stack(padded_pos)
+            x = x + pos_embed
+        else:
+            x = x + self.pos_embed
         
-        # 添加CLS token和位置编码
+        # 添加CLS token
         cls_tokens = self.cls_token.expand(B, -1, -1)
         x = torch.cat([cls_tokens, x], dim=1)
+        
         x = self.dropout(x)
         
-        # 通过Transformer层，带特征融合
-        self.intermediate_features = []
-        
-        for i, block in enumerate(self.blocks):
+        # 通过Transformer层
+        for block in self.blocks:
             x = block(x)
-            
-            # 保存中间特征
-            if i % 3 == 2 and i < len(self.blocks) - 1:
-                self.intermediate_features.append(x)
-            
-            # 深层特征融合
-            if i % 3 == 2 and len(self.intermediate_features) > 1:
-                fusion_idx = i // 3 - 1
-                if fusion_idx < len(self.fusion_layers):
-                    # 融合当前特征和早期特征
-                    early_feat = self.intermediate_features[-2]
-                    fused = torch.cat([x, early_feat], dim=-1)
-                    x = x + self.fusion_layers[fusion_idx](fused)
         
         x = self.norm(x)
         
@@ -144,24 +166,53 @@ class Predictor(nn.Module):
         
     def forward(self, context_features, target_positions):
         batch_size = context_features.size(0)
+        device = context_features.device
         
         # 编码上下文
         x = context_features
         for block in self.encoder_blocks:
             x = block(x)
         
-        # 为目标位置创建查询
-        num_targets = len(target_positions[0]) if isinstance(target_positions[0], list) else 1
-        target_queries = self.spatial_pos_embed[:, target_positions[0], :].expand(batch_size, -1, -1)
+        # 收集所有预测
+        all_predictions = []
         
-        # 交叉注意力预测
-        for cross_attn, decoder in zip(self.cross_attention, self.decoder_blocks):
-            # 交叉注意力：目标查询关注上下文
-            target_queries, _ = cross_attn(target_queries, x, x)
-            # 自注意力refinement
-            target_queries = decoder(target_queries)
+        for i in range(batch_size):
+            if i < len(target_positions) and isinstance(target_positions[i], list) and len(target_positions[i]) > 0:
+                # 为当前样本的目标位置创建查询
+                curr_target_positions = target_positions[i]
+                num_targets = len(curr_target_positions)
+                
+                # 获取目标位置的空间编码
+                target_queries = []
+                for pos in curr_target_positions:
+                    if pos < self.spatial_pos_embed.size(1):
+                        target_queries.append(self.spatial_pos_embed[0, pos, :])
+                    else:
+                        # 如果位置超出范围，使用默认编码
+                        target_queries.append(self.spatial_pos_embed[0, 0, :])
+                
+                target_queries = torch.stack(target_queries).unsqueeze(0)  # [1, num_targets, embed_dim]
+                
+                # 对当前样本进行交叉注意力预测
+                curr_context = x[i:i+1]  # [1, seq_len, embed_dim]
+                
+                for cross_attn, decoder in zip(self.cross_attention, self.decoder_blocks):
+                    # 交叉注意力：目标查询关注上下文
+                    target_queries, _ = cross_attn(target_queries, curr_context, curr_context)
+                    # 自注意力refinement
+                    target_queries = decoder(target_queries)
+                
+                predictions = self.norm(target_queries)  # [1, num_targets, embed_dim]
+                all_predictions.append(predictions[0])  # [num_targets, embed_dim]
+            else:
+                # 如果没有有效的目标位置，返回一个默认预测
+                default_pred = self.norm(x[i, 0:1, :])  # 使用第一个位置作为默认
+                all_predictions.append(default_pred[0])
         
-        predictions = self.norm(target_queries)
+        # 将所有预测拼接成一个大张量
+        # 由于每个样本的目标数量可能不同，我们需要将它们展平
+        predictions = torch.cat(all_predictions, dim=0)  # [total_targets, embed_dim]
+        
         return predictions
 
 

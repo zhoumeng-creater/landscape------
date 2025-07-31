@@ -56,82 +56,22 @@ class AdvancedContextEncoder(nn.Module):
         # 保存中间特征
         self.intermediate_features = []
 
-    def forward(self, x, context_patches=None):
-        B = x.shape[0]
-        
-        # 分块嵌入
-        x = self.patch_embed(x)
-        
-        # 处理上下文patches
-        if context_patches is not None:
-            context_x = []
-            context_pos = []
-            max_len = 0
-            
-            for i in range(B):
-                if len(context_patches[i]) > 0 and max(context_patches[i]) < x.shape[1]:
-                    patches = x[i, context_patches[i]]
-                    pos_embed = self.pos_embed[0, context_patches[i]]
-                    context_x.append(patches)
-                    context_pos.append(pos_embed)
-                    max_len = max(max_len, len(patches))
-                else:
-                    # 如果上下文patches无效，使用所有patches
-                    context_x.append(x[i])
-                    context_pos.append(self.pos_embed[0])
-                    max_len = max(max_len, x.shape[1])
-            
-            # 填充到相同长度
-            padded_x = []
-            padded_pos = []
-            
-            for ctx, pos in zip(context_x, context_pos):
-                if len(ctx) < max_len:
-                    padding_len = max_len - len(ctx)
-                    padding = torch.zeros(padding_len, ctx.shape[-1], device=ctx.device)
-                    ctx = torch.cat([ctx, padding], dim=0)
-                    pos = torch.cat([pos, padding], dim=0)
-                padded_x.append(ctx)
-                padded_pos.append(pos)
-            
-            x = torch.stack(padded_x)
-            pos_embed = torch.stack(padded_pos)
-            x = x + pos_embed
-        else:
-            x = x + self.pos_embed
-        
-        # 添加CLS token
-        cls_tokens = self.cls_token.expand(B, -1, -1)
-        x = torch.cat([cls_tokens, x], dim=1)
-        
-        x = self.dropout(x)
-        
-        # 通过Transformer层，带特征融合
-        self.intermediate_features = []
-        
-        for i, block in enumerate(self.blocks):
+    def forward(self, x, target_patches):
+        # 通过Transformer层
+        for block in self.blocks:
             x = block(x)
-            
-            # 保存中间特征
-            if i % 3 == 2 and i < len(self.blocks) - 1:
-                self.intermediate_features.append(x)
-            
-            # 深层特征融合
-            if i % 3 == 2 and len(self.intermediate_features) > 1:
-                fusion_idx = i // 3 - 1
-                if fusion_idx < len(self.fusion_layers):
-                    # 融合当前特征和早期特征
-                    early_feat = self.intermediate_features[-2]
-                    fused = torch.cat([x, early_feat], dim=-1)
-                    x = x + self.fusion_layers[fusion_idx](fused)
         
         x = self.norm(x)
         
-        # 特征增强
-        cls_features = self.feature_enhancer(x[:, 0])
-        x = torch.cat([cls_features.unsqueeze(1), x[:, 1:]], dim=1)
+        # 使用CLS token作为全局上下文进行预测
+        batch_size = x.size(0)
+        predictions = []
         
-        return x
+        for i in range(batch_size):
+            cls_token = x[i, 0]
+            predictions.append(cls_token)
+        
+        return torch.stack(predictions)
 
 
 class TargetEncoder(nn.Module):

@@ -33,7 +33,7 @@ class ImprovedPatchEmbedding(nn.Module):
     使用重叠的patch和多尺度投影来提取更丰富的特征
     """
     def __init__(self, img_size=224, patch_size=16, in_channels=3, 
-                 embed_dim=768, overlap_ratio=0.25):
+                 embed_dim=768, overlap_ratio=0.0):
         super().__init__()
         self.img_size = img_size
         self.patch_size = patch_size
@@ -51,10 +51,10 @@ class ImprovedPatchEmbedding(nn.Module):
         
         # 多尺度辅助投影
         self.aux_projections = nn.ModuleList([
-            nn.Conv2d(in_channels, embed_dim // 4, 
-                     kernel_size=patch_size//2, stride=self.stride, padding=0),
-            nn.Conv2d(in_channels, embed_dim // 4, 
-                     kernel_size=patch_size*2, stride=self.stride*2, padding=0)
+            # nn.Conv2d(in_channels, embed_dim // 4, 
+            #          kernel_size=patch_size//2, stride=self.stride, padding=0),
+            # nn.Conv2d(in_channels, embed_dim // 4, 
+            #          kernel_size=patch_size*2, stride=self.stride*2, padding=0)
         ])
         
         # 特征融合层
@@ -68,35 +68,35 @@ class ImprovedPatchEmbedding(nn.Module):
         main_features = self.projection(x)
         main_features = main_features.flatten(2).transpose(1, 2)
         
-        # 多尺度辅助特征
-        aux_features = []
-        for proj in self.aux_projections:
-            try:
-                aux_feat = proj(x)
-                # 调整大小以匹配主特征的patch数量
-                target_size = int(main_features.shape[1] ** 0.5)
-                aux_feat = F.adaptive_avg_pool2d(aux_feat, target_size)
-                aux_feat = aux_feat.flatten(2).transpose(1, 2)
-                aux_features.append(aux_feat)
-            except:
-                # 如果尺寸不匹配，跳过该尺度
-                continue
+        # # 多尺度辅助特征
+        # aux_features = []
+        # for proj in self.aux_projections:
+        #     try:
+        #         aux_feat = proj(x)
+        #         # 调整大小以匹配主特征的patch数量
+        #         target_size = int(main_features.shape[1] ** 0.5)
+        #         aux_feat = F.adaptive_avg_pool2d(aux_feat, target_size)
+        #         aux_feat = aux_feat.flatten(2).transpose(1, 2)
+        #         aux_features.append(aux_feat)
+        #     except:
+        #         # 如果尺寸不匹配，跳过该尺度
+        #         continue
         
-        # 特征融合
-        if aux_features:
-            aux_features = torch.cat(aux_features, dim=-1)
-            # 确保patch数量匹配
-            if aux_features.shape[1] != main_features.shape[1]:
-                aux_features = F.interpolate(
-                    aux_features.transpose(1, 2), 
-                    size=main_features.shape[1], 
-                    mode='linear', align_corners=False
-                ).transpose(1, 2)
+        # # 特征融合
+        # if aux_features:
+        #     aux_features = torch.cat(aux_features, dim=-1)
+        #     # 确保patch数量匹配
+        #     if aux_features.shape[1] != main_features.shape[1]:
+        #         aux_features = F.interpolate(
+        #             aux_features.transpose(1, 2), 
+        #             size=main_features.shape[1], 
+        #             mode='linear', align_corners=False
+        #         ).transpose(1, 2)
             
-            combined_features = torch.cat([main_features, aux_features], dim=-1)
-            features = self.feature_fusion(combined_features)
-        else:
-            features = main_features
+        #     combined_features = torch.cat([main_features, aux_features], dim=-1)
+        #     features = self.feature_fusion(combined_features)
+        # else:
+        #     features = main_features
         
         features = self.norm(features)
         return features

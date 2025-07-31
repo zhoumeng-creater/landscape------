@@ -46,7 +46,7 @@ class Config:
     MLP_RATIO = 4
     
     # Patch Embedding配置
-    OVERLAP_RATIO = 0.25
+    OVERLAP_RATIO = 0.0
     
     # 注意力配置
     ATTENTION_DROPOUT = 0.1

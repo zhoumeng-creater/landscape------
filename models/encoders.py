@@ -56,22 +56,45 @@ class AdvancedContextEncoder(nn.Module):
         # 保存中间特征
         self.intermediate_features = []
 
-    def forward(self, x, target_patches):
-        # 通过Transformer层
-        for block in self.blocks:
+    def forward(self, x, context_patches=None):
+        B = x.shape[0]
+        
+        # 分块嵌入
+        x = self.patch_embed(x)
+        
+        # ... 处理上下文patches的代码 ...
+        
+        # 添加CLS token和位置编码
+        cls_tokens = self.cls_token.expand(B, -1, -1)
+        x = torch.cat([cls_tokens, x], dim=1)
+        x = self.dropout(x)
+        
+        # 通过Transformer层，带特征融合
+        self.intermediate_features = []
+        
+        for i, block in enumerate(self.blocks):
             x = block(x)
+            
+            # 保存中间特征
+            if i % 3 == 2 and i < len(self.blocks) - 1:
+                self.intermediate_features.append(x)
+            
+            # 深层特征融合
+            if i % 3 == 2 and len(self.intermediate_features) > 1:
+                fusion_idx = i // 3 - 1
+                if fusion_idx < len(self.fusion_layers):
+                    # 融合当前特征和早期特征
+                    early_feat = self.intermediate_features[-2]
+                    fused = torch.cat([x, early_feat], dim=-1)
+                    x = x + self.fusion_layers[fusion_idx](fused)
         
         x = self.norm(x)
         
-        # 使用CLS token作为全局上下文进行预测
-        batch_size = x.size(0)
-        predictions = []
+        # 特征增强
+        cls_features = self.feature_enhancer(x[:, 0])
+        x = torch.cat([cls_features.unsqueeze(1), x[:, 1:]], dim=1)
         
-        for i in range(batch_size):
-            cls_token = x[i, 0]
-            predictions.append(cls_token)
-        
-        return torch.stack(predictions)
+        return x
 
 
 class TargetEncoder(nn.Module):

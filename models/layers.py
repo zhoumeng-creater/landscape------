@@ -98,7 +98,7 @@ class ImprovedPatchEmbedding(nn.Module):
         # else:
         #     features = main_features
         
-        features = self.norm(features)
+        features = self.norm(main_features)
         return features
 
 

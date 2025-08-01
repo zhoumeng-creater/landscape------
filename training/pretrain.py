@@ -64,8 +64,8 @@ def create_scheduler(optimizer, num_epochs, warmup_epochs):
     return scheduler
 
 
-def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=100, loss_weight_module=None, loss_history=None):
-    """训练一个epoch
+def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=100):
+    """训练一个epoch - 简化版本
     
     Args:
         model: I-JEPA模型
@@ -84,7 +84,6 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
     epoch_loss = 0.0
     cosine_similarities = []
     feature_stds = []
-    loss_weights = None  # 初始化 loss_weights
     
     for batch_idx, images in enumerate(train_loader):
         images = images.to(device)
@@ -101,9 +100,9 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
             # 前向传播
             predictions, targets = model(images, context_patches, target_patches)
             
-            # 使用动态权重计算损失
-            loss, cosine_sim, loss_weights = compute_enhanced_loss(
-                predictions, targets, loss_weight_module, epoch
+            # 使用简化的损失计算（不使用动态权重模块）
+            loss, cosine_sim, _ = compute_enhanced_loss(
+                predictions, targets, loss_weight_module=None, epoch=epoch
             )
             
             # 反向传播
@@ -115,7 +114,7 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
             # 优化器步骤
             optimizer.step()
             
-            # 动态EMA更新 - 修正调用参数
+            # 简化的EMA更新 - 使用固定momentum
             update_target_encoder(
                 model.context_encoder, model.target_encoder,
                 momentum=Config.EMA_MOMENTUM
@@ -134,14 +133,14 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
             if batch_idx % log_interval == 0:
                 print(f'Epoch {epoch+1}, Batch {batch_idx}/{len(train_loader)}, '
                       f'Loss: {loss.item():.4f}, Cosine Sim: {cosine_sim.item():.4f}')
-                if loss_weights is not None:
-                    print(f'Loss Weights: {loss_weights.detach().cpu().numpy()}')
                 
         except Exception as e:
             print(f"训练步骤出错: {e}")
+            import traceback
+            traceback.print_exc()  # 打印完整的错误堆栈
             continue
     
-    # 返回更多信息
+    # 返回平均值
     avg_loss = epoch_loss / len(train_loader) if len(train_loader) > 0 else 0.0
     avg_cosine_sim = np.mean(cosine_similarities) if cosine_similarities else 0.0
     avg_feature_std = np.mean(feature_stds) if feature_stds else 0.0

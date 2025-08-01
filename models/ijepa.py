@@ -29,58 +29,58 @@ class OptimizedIJEPAModel(nn.Module):
         self.patch_size = patch_size
         self.n_patches = self.context_encoder.n_patches
         
-def forward(self, x, context_patches, target_patches):
-    """前向传播
-    
-    Args:
-        x: 输入图像 [B, C, H, W]
-        context_patches: 每个样本的可见patch索引列表
-        target_patches: 每个样本的目标patch索引列表
+    def forward(self, x, context_patches, target_patches):
+        """前向传播
         
-    Returns:
-        predictions: 预测的目标表示
-        targets: 真实的目标表示
-    """
-    # 上下文编码 - 只编码可见的patches
-    context_repr = self.context_encoder(x, context_patches)
-    
-    # 目标编码 - 使用完整图像
-    with torch.no_grad():
-        target_repr = self.target_encoder(x)
-    
-    # 预测目标表示
-    predictions = self.predictor(context_repr, target_patches)
-    
-    # 获取对应的目标表示 - 修改这部分
-    batch_size = target_repr.size(0)
-    targets = []
-    
-    for i in range(batch_size):
-        if i < len(target_patches) and target_patches[i] is not None and len(target_patches[i]) > 0:
-            # 获取多个目标patches
-            batch_targets = []
-            for target_idx in target_patches[i]:
-                # 考虑CLS token，所以索引要+1
-                if target_idx + 1 < target_repr.size(1):
-                    batch_targets.append(target_repr[i, target_idx + 1])
-                else:
-                    batch_targets.append(target_repr[i, 1])  # 默认使用第一个patch
-            targets.append(torch.stack(batch_targets))
-        else:
-            # 如果没有有效的目标patches，创建与predictions相同数量的默认目标
-            num_targets = predictions.size(1) if predictions.dim() == 3 else 1
-            default_targets = [target_repr[i, 1] for _ in range(num_targets)]
-            targets.append(torch.stack(default_targets))
-    
-    targets = torch.stack(targets)
-    
-    # 确保predictions和targets的形状匹配
-    if predictions.dim() == 3 and targets.dim() == 3:
-        # 如果都是3D张量，展平为2D进行损失计算
-        predictions = predictions.reshape(-1, predictions.size(-1))
-        targets = targets.reshape(-1, targets.size(-1))
-    
-    return predictions, targets
+        Args:
+            x: 输入图像 [B, C, H, W]
+            context_patches: 每个样本的可见patch索引列表
+            target_patches: 每个样本的目标patch索引列表
+            
+        Returns:
+            predictions: 预测的目标表示
+            targets: 真实的目标表示
+        """
+        # 上下文编码 - 只编码可见的patches
+        context_repr = self.context_encoder(x, context_patches)
+        
+        # 目标编码 - 使用完整图像
+        with torch.no_grad():
+            target_repr = self.target_encoder(x)
+        
+        # 预测目标表示
+        predictions = self.predictor(context_repr, target_patches)
+        
+        # 获取对应的目标表示 - 修改这部分
+        batch_size = target_repr.size(0)
+        targets = []
+        
+        for i in range(batch_size):
+            if i < len(target_patches) and target_patches[i] is not None and len(target_patches[i]) > 0:
+                # 获取多个目标patches
+                batch_targets = []
+                for target_idx in target_patches[i]:
+                    # 考虑CLS token，所以索引要+1
+                    if target_idx + 1 < target_repr.size(1):
+                        batch_targets.append(target_repr[i, target_idx + 1])
+                    else:
+                        batch_targets.append(target_repr[i, 1])  # 默认使用第一个patch
+                targets.append(torch.stack(batch_targets))
+            else:
+                # 如果没有有效的目标patches，创建与predictions相同数量的默认目标
+                num_targets = predictions.size(1) if predictions.dim() == 3 else 1
+                default_targets = [target_repr[i, 1] for _ in range(num_targets)]
+                targets.append(torch.stack(default_targets))
+        
+        targets = torch.stack(targets)
+        
+        # 确保predictions和targets的形状匹配
+        if predictions.dim() == 3 and targets.dim() == 3:
+            # 如果都是3D张量，展平为2D进行损失计算
+            predictions = predictions.reshape(-1, predictions.size(-1))
+            targets = targets.reshape(-1, targets.size(-1))
+        
+        return predictions, targets
     
     def encode(self, x):
         """提取特征表示用于下游任务

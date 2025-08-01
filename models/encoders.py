@@ -138,80 +138,58 @@ class TargetEncoder(nn.Module):
 
 
 class Predictor(nn.Module):
-    """改进的预测器 - 使用交叉注意力和空间感知"""
+    """简化版预测器 - 更稳定和可预测"""
     def __init__(self, embed_dim=768, predictor_depth=6, n_heads=12):
         super().__init__()
         
-        # 使用编码器-解码器架构
-        self.encoder_blocks = nn.ModuleList([
+        # 使用简单的Transformer层堆叠
+        self.blocks = nn.ModuleList([
             ImprovedTransformerBlock(embed_dim, n_heads)
-            for _ in range(predictor_depth // 2)
+            for _ in range(predictor_depth)
         ])
-        
-        # 交叉注意力层
-        self.cross_attention = nn.ModuleList([
-            nn.MultiheadAttention(embed_dim, n_heads, batch_first=True)
-            for _ in range(predictor_depth // 2)
-        ])
-        
-        self.decoder_blocks = nn.ModuleList([
-            ImprovedTransformerBlock(embed_dim, n_heads)
-            for _ in range(predictor_depth // 2)
-        ])
-        
-        # 空间位置编码
-        self.spatial_pos_embed = nn.Parameter(torch.randn(1, 196, embed_dim))
         
         self.norm = nn.LayerNorm(embed_dim)
         
     def forward(self, context_features, target_positions):
+        """
+        Args:
+            context_features: 上下文特征 [B, seq_len, embed_dim]
+            target_positions: 目标位置列表 (每个batch的目标位置)
+            
+        Returns:
+            predictions: 预测的目标特征 [total_targets, embed_dim]
+        """
         batch_size = context_features.size(0)
         device = context_features.device
         
-        # 编码上下文
+        # 通过Transformer层处理上下文
         x = context_features
-        for block in self.encoder_blocks:
+        for block in self.blocks:
             x = block(x)
         
-        # 收集所有预测
+        # 归一化
+        x = self.norm(x)
+        
+        # 收集目标位置的预测
         all_predictions = []
         
         for i in range(batch_size):
             if i < len(target_positions) and isinstance(target_positions[i], list) and len(target_positions[i]) > 0:
-                # 为当前样本的目标位置创建查询
-                curr_target_positions = target_positions[i]
-                num_targets = len(curr_target_positions)
-                
-                # 获取目标位置的空间编码
-                target_queries = []
-                for pos in curr_target_positions:
-                    if pos < self.spatial_pos_embed.size(1):
-                        target_queries.append(self.spatial_pos_embed[0, pos, :])
+                # 获取指定位置的特征
+                for pos in target_positions[i]:
+                    # 考虑CLS token，位置需要+1
+                    actual_pos = pos + 1
+                    if actual_pos < x.size(1):
+                        all_predictions.append(x[i, actual_pos])
                     else:
-                        # 如果位置超出范围，使用默认编码
-                        target_queries.append(self.spatial_pos_embed[0, 0, :])
-                
-                target_queries = torch.stack(target_queries).unsqueeze(0)  # [1, num_targets, embed_dim]
-                
-                # 对当前样本进行交叉注意力预测
-                curr_context = x[i:i+1]  # [1, seq_len, embed_dim]
-                
-                for cross_attn, decoder in zip(self.cross_attention, self.decoder_blocks):
-                    # 交叉注意力：目标查询关注上下文
-                    target_queries, _ = cross_attn(target_queries, curr_context, curr_context)
-                    # 自注意力refinement
-                    target_queries = decoder(target_queries)
-                
-                predictions = self.norm(target_queries)  # [1, num_targets, embed_dim]
-                all_predictions.append(predictions[0])  # [num_targets, embed_dim]
+                        # 位置超出范围，使用第一个非CLS位置
+                        all_predictions.append(x[i, 1])
             else:
-                # 如果没有有效的目标位置，返回一个默认预测
-                default_pred = self.norm(x[i, 0:1, :])  # 使用第一个位置作为默认
-                all_predictions.append(default_pred[0])
+                # 没有指定目标位置，使用第一个非CLS位置
+                all_predictions.append(x[i, 1])
         
-        # 将所有预测拼接成一个大张量
-        # 由于每个样本的目标数量可能不同，我们需要将它们展平
-        predictions = torch.cat(all_predictions, dim=0)  # [total_targets, embed_dim]
+        # 将所有预测堆叠成一个张量
+        predictions = torch.stack(all_predictions, dim=0)  # [total_targets, embed_dim]
         
         return predictions
 

@@ -94,13 +94,42 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
             batch_size, model.n_patches, epoch, Config.PRETRAIN_EPOCHS
         )
         
+        # 调试信息：打印掩码信息
+        if batch_idx == 0:
+            print(f"\n调试信息 - Batch {batch_idx}:")
+            print(f"Batch size: {batch_size}")
+            print(f"Number of patches: {model.n_patches}")
+            for i in range(min(2, batch_size)):  # 只打印前2个样本
+                print(f"  样本 {i}:")
+                print(f"    Context patches数量: {len(context_patches[i])}")
+                print(f"    Target patches数量: {len(target_patches[i])}")
+                print(f"    Target patches: {target_patches[i][:5]}...")  # 只显示前5个
+        
         optimizer.zero_grad()
         
         try:
             # 前向传播
             predictions, targets = model(images, context_patches, target_patches)
             
-            # 使用简化的损失计算（不使用动态权重模块）
+            # 调试信息：打印形状
+            if batch_idx == 0:
+                print(f"\n前向传播后的形状:")
+                print(f"  Predictions: {predictions.shape}")
+                print(f"  Targets: {targets.shape}")
+            
+            # 确保形状匹配
+            if predictions.shape != targets.shape:
+                print(f"\n警告: 形状不匹配!")
+                print(f"  Predictions: {predictions.shape}")
+                print(f"  Targets: {targets.shape}")
+                
+                # 尝试修复
+                min_size = min(predictions.shape[0], targets.shape[0])
+                predictions = predictions[:min_size]
+                targets = targets[:min_size]
+                print(f"  修复后 - Predictions: {predictions.shape}, Targets: {targets.shape}")
+            
+            # 使用简化的损失计算
             loss, cosine_sim, _ = compute_enhanced_loss(
                 predictions, targets, loss_weight_module=None, epoch=epoch
             )
@@ -114,7 +143,7 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
             # 优化器步骤
             optimizer.step()
             
-            # 简化的EMA更新 - 使用固定momentum
+            # 简化的EMA更新
             update_target_encoder(
                 model.context_encoder, model.target_encoder,
                 momentum=Config.EMA_MOMENTUM
@@ -135,9 +164,17 @@ def train_one_epoch(model, train_loader, optimizer, device, epoch, log_interval=
                       f'Loss: {loss.item():.4f}, Cosine Sim: {cosine_sim.item():.4f}')
                 
         except Exception as e:
-            print(f"训练步骤出错: {e}")
+            print(f"\n训练步骤出错: {e}")
+            print(f"错误类型: {type(e).__name__}")
             import traceback
-            traceback.print_exc()  # 打印完整的错误堆栈
+            traceback.print_exc()
+            
+            # 打印更多调试信息
+            if 'predictions' in locals():
+                print(f"Predictions shape: {predictions.shape}")
+            if 'targets' in locals():
+                print(f"Targets shape: {targets.shape}")
+            
             continue
     
     # 返回平均值

@@ -51,34 +51,61 @@ class OptimizedIJEPAModel(nn.Module):
         # 预测目标表示
         predictions = self.predictor(context_repr, target_patches)
         
-        # 获取对应的目标表示 - 修改这部分
-        batch_size = target_repr.size(0)
-        targets = []
+        # 获取对应的目标表示
+        batch_size = x.size(0)
+        device = x.device
+        
+        # 计算每个批次的目标数量
+        target_counts = []
+        for i in range(batch_size):
+            if i < len(target_patches) and isinstance(target_patches[i], list) and len(target_patches[i]) > 0:
+                target_counts.append(len(target_patches[i]))
+            else:
+                target_counts.append(1)  # 默认至少有一个目标
+        
+        # 从target_repr中提取目标
+        all_targets = []
+        start_idx = 0
         
         for i in range(batch_size):
-            if i < len(target_patches) and target_patches[i] is not None and len(target_patches[i]) > 0:
-                # 获取多个目标patches
+            if i < len(target_patches) and isinstance(target_patches[i], list) and len(target_patches[i]) > 0:
+                # 获取当前批次的目标patches
                 batch_targets = []
                 for target_idx in target_patches[i]:
                     # 考虑CLS token，所以索引要+1
-                    if target_idx + 1 < target_repr.size(1):
-                        batch_targets.append(target_repr[i, target_idx + 1])
+                    actual_idx = target_idx + 1
+                    if actual_idx < target_repr.size(1):
+                        batch_targets.append(target_repr[i, actual_idx])
                     else:
-                        batch_targets.append(target_repr[i, 1])  # 默认使用第一个patch
-                targets.append(torch.stack(batch_targets))
+                        # 如果索引超出范围，使用第一个非CLS token
+                        batch_targets.append(target_repr[i, 1])
+                
+                # 将目标堆叠起来
+                batch_targets = torch.stack(batch_targets)  # [num_targets, embed_dim]
+                all_targets.append(batch_targets)
             else:
-                # 如果没有有效的目标patches，创建与predictions相同数量的默认目标
-                num_targets = predictions.size(1) if predictions.dim() == 3 else 1
-                default_targets = [target_repr[i, 1] for _ in range(num_targets)]
-                targets.append(torch.stack(default_targets))
+                # 如果没有有效的目标patches，使用默认目标
+                default_target = target_repr[i, 1:2]  # [1, embed_dim]
+                all_targets.append(default_target)
         
-        targets = torch.stack(targets)
+        # 将所有目标连接成一个张量
+        targets = torch.cat(all_targets, dim=0)  # [total_targets, embed_dim]
         
-        # 确保predictions和targets的形状匹配
-        if predictions.dim() == 3 and targets.dim() == 3:
-            # 如果都是3D张量，展平为2D进行损失计算
-            predictions = predictions.reshape(-1, predictions.size(-1))
-            targets = targets.reshape(-1, targets.size(-1))
+        # 确保predictions也是2D的
+        if predictions.dim() == 3:
+            # 如果predictions是3D的，需要reshape
+            predictions = predictions.view(-1, predictions.size(-1))
+        
+        # 验证形状匹配
+        if predictions.shape[0] != targets.shape[0]:
+            print(f"警告: predictions形状 {predictions.shape} 与 targets形状 {targets.shape} 不匹配")
+            # 尝试修复：如果形状不匹配，调整targets的数量
+            if predictions.shape[0] < targets.shape[0]:
+                targets = targets[:predictions.shape[0]]
+            else:
+                # 如果predictions更多，重复targets
+                repeat_times = predictions.shape[0] // targets.shape[0] + 1
+                targets = targets.repeat(repeat_times, 1)[:predictions.shape[0]]
         
         return predictions, targets
     

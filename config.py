@@ -86,7 +86,7 @@ class Config:
     
     # 优化器配置
     OPTIMIZER_TYPE = 'adamw'  # 可选: 'adamw', 'lamb', 'lion'
-    USE_SAM = True  # 是否使用SAM优化器
+    USE_SAM = False  # 禁用SAM优化器
     SAM_RHO = 0.05
     
     # 混合精度训练
@@ -117,7 +117,7 @@ class Config:
     # 日志配置
     LOG_INTERVAL = 100
     SAVE_BEST_ONLY = True
-    
+
     # ============================== 数据增强配置 ==============================
     # 增强级别
     AUGMENTATION_LEVEL = 'strong'  # 可选: 'basic', 'medium', 'strong'

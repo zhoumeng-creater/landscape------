@@ -176,15 +176,16 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, epoch,
         
         # 梯度累积步骤
         if (batch_idx + 1) % accumulation_steps == 0:
-            # 梯度裁剪
-            scaler.unscale_(optimizer if not use_sam else optimizer.base_optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), Config.GRADIENT_CLIP)
-            
             if use_sam:
-                # SAM第一步：只移动参数，不更新scaler
+                # SAM优化器的特殊处理
+                # 第一步：计算梯度并移动到扰动位置
+                scaler.unscale_(optimizer.base_optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), Config.GRADIENT_CLIP)
+                scaler.step(optimizer.base_optimizer)
+                scaler.update()
                 optimizer.first_step()
                 
-                # SAM第二步：重新计算梯度
+                # 第二步：在扰动位置重新计算梯度
                 optimizer.base_optimizer.zero_grad()
                 with autocast(enabled=Config.USE_AMP):
                     output2 = model(data)
@@ -200,12 +201,18 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, epoch,
                     loss2 = loss2 / accumulation_steps
                 
                 scaler.scale(loss2).backward()
+                
+                # 第二步的梯度处理和参数更新
                 scaler.unscale_(optimizer.base_optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), Config.GRADIENT_CLIP)
-                optimizer.second_step()
+                scaler.step(optimizer.base_optimizer)
                 scaler.update()
+                optimizer.second_step()
+                optimizer.base_optimizer.zero_grad()
             else:
                 # 普通优化器步骤
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), Config.GRADIENT_CLIP)
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()

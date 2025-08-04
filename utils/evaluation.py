@@ -1,5 +1,6 @@
 """
 评估函数模块 - 模型评估相关函数
+包含原版本和新增的预训练模型评估函数
 """
 import torch
 import torch.nn.functional as F
@@ -10,10 +11,12 @@ from sklearn.metrics import (
     balanced_accuracy_score, cohen_kappa_score
 )
 from config import Config
+from data.transforms import get_tta_transforms
+from torch.cuda.amp import autocast
 
 
 def evaluate_optimized_model(ijepa_model, classifier, test_loader, label_encoder):
-    """评估优化模型
+    """评估优化模型（原版本）
     
     Args:
         ijepa_model: I-JEPA模型
@@ -63,23 +66,144 @@ def evaluate_optimized_model(ijepa_model, classifier, test_loader, label_encoder
     # 打印结果
     print_evaluation_results(results, label_encoder)
     
+    return results, all_predictions, all_targets
+
+
+def evaluate_pretrained_model(model, test_loader, label_encoder, use_tta=False):
+    """评估预训练模型（新增）
+    
+    Args:
+        model: 预训练模型
+        test_loader: 测试数据加载器
+        label_encoder: 标签编码器
+        use_tta: 是否使用测试时增强
+        
+    Returns:
+        results: 评估结果字典
+        predictions: 所有预测
+        targets: 所有真实标签
+    """
+    device = Config.DEVICE
+    model.eval()
+    
+    all_predictions = []
+    all_targets = []
+    all_probabilities = []
+    
+    print("🔍 正在评估预训练模型...")
+    if use_tta:
+        print("  使用测试时增强(TTA)...")
+    
+    with torch.no_grad():
+        for batch_idx, (data, target) in enumerate(test_loader):
+            data, target = data.to(device), target.to(device)
+            
+            if use_tta:
+                # 测试时增强
+                probabilities = perform_tta(model, data)
+            else:
+                # 标准预测
+                with autocast(enabled=Config.USE_AMP):
+                    output = model(data)
+                    if isinstance(output, tuple):
+                        logits, _ = output
+                    else:
+                        logits = output
+                    probabilities = F.softmax(logits, dim=1)
+            
+            _, predicted = torch.max(probabilities, 1)
+            
+            all_predictions.extend(predicted.cpu().numpy())
+            all_targets.extend(target.cpu().numpy())
+            all_probabilities.extend(probabilities.cpu().numpy())
+            
+            # 打印进度
+            if batch_idx % 10 == 0:
+                print(f"  处理批次 {batch_idx}/{len(test_loader)}")
+    
+    # 转换为numpy数组
+    all_predictions = np.array(all_predictions)
+    all_targets = np.array(all_targets)
+    all_probabilities = np.array(all_probabilities)
+    
+    # 计算各种指标
+    results = calculate_metrics(all_targets, all_predictions, all_probabilities)
+    
+    # 打印结果
+    print_evaluation_results(results, label_encoder)
+    
     # 生成详细报告
-    # generate_classification_report(all_targets, all_predictions, label_encoder)
+    generate_detailed_report(all_targets, all_predictions, all_probabilities, label_encoder)
     
     return results, all_predictions, all_targets
 
 
-def calculate_metrics(y_true, y_pred, y_prob=None):
-    """计算各种评估指标
+def perform_tta(model, data):
+    """执行测试时增强
     
     Args:
-        y_true: 真实标签
-        y_pred: 预测标签
-        y_prob: 预测概率（可选）
+        model: 模型
+        data: 输入数据（已经是tensor）
         
     Returns:
-        metrics: 指标字典
+        averaged_probs: 平均概率
     """
+    # 获取TTA变换
+    tta_transforms = get_tta_transforms()
+    
+    # 存储所有预测
+    all_probs = []
+    
+    # 原始预测
+    with autocast(enabled=Config.USE_AMP):
+        output = model(data)
+        if isinstance(output, tuple):
+            logits, _ = output
+        else:
+            logits = output
+        probs = F.softmax(logits, dim=1)
+        all_probs.append(probs)
+    
+    # TTA预测（简化版本，因为输入已经是tensor）
+    # 水平翻转
+    flipped_data = torch.flip(data, dims=[3])  # 水平翻转
+    with autocast(enabled=Config.USE_AMP):
+        output = model(flipped_data)
+        if isinstance(output, tuple):
+            logits, _ = output
+        else:
+            logits = output
+        probs = F.softmax(logits, dim=1)
+        all_probs.append(probs)
+    
+    # 小角度旋转（使用torch的旋转）
+    for angle in [-5, 5]:
+        angle_rad = angle * np.pi / 180
+        theta = torch.tensor([
+            [np.cos(angle_rad), -np.sin(angle_rad), 0],
+            [np.sin(angle_rad), np.cos(angle_rad), 0]
+        ], dtype=torch.float32).unsqueeze(0).repeat(data.size(0), 1, 1).to(data.device)
+        
+        grid = F.affine_grid(theta, data.size(), align_corners=False)
+        rotated_data = F.grid_sample(data, grid, align_corners=False)
+        
+        with autocast(enabled=Config.USE_AMP):
+            output = model(rotated_data)
+            if isinstance(output, tuple):
+                logits, _ = output
+            else:
+                logits = output
+            probs = F.softmax(logits, dim=1)
+            all_probs.append(probs)
+    
+    # 平均所有预测
+    averaged_probs = torch.stack(all_probs).mean(dim=0)
+    
+    return averaged_probs
+
+
+def calculate_metrics(y_true, y_pred, y_prob=None):
+    """计算各种评估指标（保留原版本）"""
     metrics = {}
     
     # 基础指标
@@ -121,14 +245,9 @@ def calculate_metrics(y_true, y_pred, y_prob=None):
 
 
 def print_evaluation_results(results, label_encoder):
-    """打印评估结果
-    
-    Args:
-        results: 评估结果字典
-        label_encoder: 标签编码器
-    """
+    """打印评估结果（增强版本）"""
     print("\n" + "="*60)
-    print("📊 优化模型测试结果:")
+    print("📊 模型测试结果:")
     print("="*60)
     
     # 打印总体指标
@@ -156,11 +275,58 @@ def print_evaluation_results(results, label_encoder):
     # 打印每个类别的性能
     print(f"\n🏷️ 每个类别的性能:")
     class_names = label_encoder.classes_
+    
+    # 找出表现最好和最差的类别
+    f1_scores = results['per_class_f1']
+    best_class_idx = np.argmax(f1_scores)
+    worst_class_idx = np.argmin(f1_scores)
+    
     for i, class_name in enumerate(class_names):
         if i < len(results['per_class_f1']):
-            print(f"  {class_name}:")
+            marker = ""
+            if i == best_class_idx:
+                marker = " ⭐ (最佳)"
+            elif i == worst_class_idx:
+                marker = " ⚠️  (最差)"
+            
+            print(f"  {class_name}{marker}:")
             print(f"    F1: {results['per_class_f1'][i]:.3f} | "
                   f"精确率: {results['per_class_precision'][i]:.3f} | "
                   f"召回率: {results['per_class_recall'][i]:.3f}")
+    
+    print("="*60)
+
+
+def generate_detailed_report(y_true, y_pred, y_prob, label_encoder):
+    """生成详细的分类报告（新增）"""
+    print("\n" + "="*60)
+    print("📋 详细分类报告:")
+    print("="*60)
+    
+    # 生成分类报告
+    report = classification_report(
+        y_true, y_pred, 
+        target_names=label_encoder.classes_,
+        digits=3
+    )
+    print(report)
+    
+    # 计算并显示置信度统计
+    if y_prob is not None:
+        max_probs = np.max(y_prob, axis=1)
+        correct_mask = y_pred == y_true
+        
+        print("\n📊 预测置信度分析:")
+        print(f"  平均置信度: {np.mean(max_probs):.3f}")
+        print(f"  正确预测的平均置信度: {np.mean(max_probs[correct_mask]):.3f}")
+        print(f"  错误预测的平均置信度: {np.mean(max_probs[~correct_mask]):.3f}")
+        
+        # 高置信度但错误的预测
+        high_conf_wrong = np.sum((max_probs > 0.9) & (~correct_mask))
+        low_conf_correct = np.sum((max_probs < 0.5) & correct_mask)
+        
+        print(f"\n⚠️  潜在问题:")
+        print(f"  高置信度(>0.9)但错误的预测: {high_conf_wrong} 个")
+        print(f"  低置信度(<0.5)但正确的预测: {low_conf_correct} 个")
     
     print("="*60)

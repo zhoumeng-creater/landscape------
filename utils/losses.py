@@ -219,3 +219,35 @@ def get_loss_function(loss_type='cross_entropy', **kwargs):
         return ContrastiveLoss(**kwargs)
     else:
         raise ValueError(f"Unknown loss type: {loss_type}")
+    
+class MixupCrossEntropy(nn.Module):
+    """Mixup交叉熵损失
+    
+    用于Mixup数据增强时的损失计算
+    """
+    def __init__(self):
+        super().__init__()
+        
+    def forward(self, inputs, targets_a, targets_b, lam):
+        """
+        Args:
+            inputs: 模型输出
+            targets_a: 第一个样本的标签
+            targets_b: 第二个样本的标签
+            lam: 混合系数
+        """
+        loss_a = F.cross_entropy(inputs, targets_a)
+        loss_b = F.cross_entropy(inputs, targets_b)
+        return lam * loss_a + (1 - lam) * loss_b
+
+
+class CutmixCrossEntropy(nn.Module):
+    """Cutmix交叉熵损失"""
+    def __init__(self):
+        super().__init__()
+        
+    def forward(self, inputs, targets_a, targets_b, lam):
+        """与Mixup相同的计算方式"""
+        loss_a = F.cross_entropy(inputs, targets_a)
+        loss_b = F.cross_entropy(inputs, targets_b)
+        return lam * loss_a + (1 - lam) * loss_b

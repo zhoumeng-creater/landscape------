@@ -19,8 +19,24 @@ class Config:
     
     # 保存路径
     CHECKPOINT_DIR = './checkpoints'
-    PRETRAIN_MODEL_PATH = 'optimized_ijepa_best.pth'
+    PRETRAIN_MODEL_PATH = 'optimized_ijepa_best.pth'  # 保留兼容性
     FINETUNE_MODEL_PATH = 'optimized_best_classifier.pth'
+    PRETRAINED_MODEL_PATH = 'pretrained_best_model.pth'  # 新增
+    
+    # ============================== 模型选择 ==============================
+    # 模型类型选择
+    MODEL_TYPE = 'pretrained'  # 可选: 'ijepa', 'pretrained', 'ensemble', 'lightweight'
+    
+    # 预训练模型配置
+    PRETRAINED_MODEL_NAME = 'vit_base_patch16_224.dino'  # 推荐选项:
+    # - 'vit_base_patch16_224.dino' (最佳特征质量)
+    # - 'vit_base_patch16_clip_224.openai' (语义理解强)
+    # - 'convnext_base.fb_in22k_ft_in1k' (细粒度分类好)
+    # - 'swin_base_patch4_window7_224' (层次化特征)
+    # - 'efficientnet_b3' (轻量级，适合P100)
+    
+    # 冻结层数（预训练模型）
+    FREEZE_LAYERS = 6  # ViT有12层，冻结前6层
     
     # ============================== 数据配置 ==============================
     # 图像配置
@@ -33,77 +49,88 @@ class Config:
     VAL_SIZE = 0.1
     
     # 数据加载
-    BATCH_SIZE_PRETRAIN = 20
-    BATCH_SIZE_FINETUNE = 28
+    BATCH_SIZE_PRETRAIN = 20  # 保留原设置
+    BATCH_SIZE_FINETUNE = 16  # 减小以适应更大的模型
     BATCH_SIZE_EVAL = 32
     NUM_WORKERS = 2
     
-    # ============================== 模型配置 ==============================
+    # ============================== 原I-JEPA模型配置（保留兼容） ==============================
     # Transformer配置
     EMBED_DIM = 768
     DEPTH = 12
     N_HEADS = 12
     MLP_RATIO = 4
     
-    # Patch Embedding配置
-    OVERLAP_RATIO = 0.0
-    
-    # 注意力配置
-    ATTENTION_DROPOUT = 0.1
-    MAX_RELATIVE_POSITION = 14
-    
     # Predictor配置
     PREDICTOR_DEPTH = 6
     
-    # 分类器配置
-    CLASSIFIER_DROPOUT = 0.5
-    
     # ============================== 训练配置 ==============================
-    # 预训练配置
+    # 训练模式
+    USE_PRETRAINED_MODEL = True  # 是否使用预训练模型
+    SKIP_PRETRAIN = True  # 跳过I-JEPA预训练阶段
+    
+    # 预训练配置（如果使用）
     PRETRAIN_EPOCHS = 60
     PRETRAIN_LR = 3e-5
     PRETRAIN_WEIGHT_DECAY = 0.05
-    PRETRAIN_BETAS = (0.9, 0.95)
-    WARMUP_EPOCHS = 10
-    EMA_MOMENTUM = 0.996
-    EMA_MOMENTUM_END = 0.9995
     
     # 微调配置
-    FINETUNE_EPOCHS = 50
-    FINETUNE_LR = 1e-3
+    FINETUNE_EPOCHS = 30  # 使用预训练模型时可以减少
+    FINETUNE_LR = 5e-5  # 使用预训练模型时要用更小的学习率
     FINETUNE_WEIGHT_DECAY = 0.01
-    FINETUNE_STAGE2_EPOCH = 15  # 开始微调预训练模型的epoch
-    FINETUNE_LR_RATIO = 10  # 预训练模型学习率降低的比例
+    FINETUNE_STAGE2_EPOCH = 10  # 开始解冻更多层
+    FINETUNE_LR_RATIO = 10
+    
+    # 优化器配置
+    OPTIMIZER_TYPE = 'adamw'  # 可选: 'adamw', 'lamb', 'lion'
+    USE_SAM = True  # 是否使用SAM优化器
+    SAM_RHO = 0.05
+    
+    # 混合精度训练
+    USE_AMP = True  # 使用自动混合精度训练
+    
+    # 梯度累积
+    GRADIENT_ACCUMULATION_STEPS = 2  # 模拟更大的batch size
     
     # 损失函数配置
     LABEL_SMOOTHING = 0.1
-    DIVERSITY_WEIGHT = 0.15
-    L2_WEIGHT = 0.1
-    CONTRASTIVE_WEIGHT = 0.05
+    USE_AUXILIARY_LOSS = True  # 使用辅助损失
+    AUX_LOSS_WEIGHT = 0.3
     
     # 正则化配置
     DROP_PATH_RATE = 0.1
     LAYER_SCALE_INIT = 1e-4
     GRADIENT_CLIP = 1.0
     
-    # 掩码策略
-    MASK_RATIO = 0.75
-    MIN_MASK_CENTERS = 2
-    MAX_MASK_CENTERS = 4
-    MIN_MASK_BLOCK_SIZE = 1
-    MAX_MASK_BLOCK_SIZE = 2
-    
     # ============================== 评估配置 ==============================
     # 早停配置
     PATIENCE_PRETRAIN = 20
-    PATIENCE_FINETUNE = 15
+    PATIENCE_FINETUNE = 10  # 使用预训练模型收敛更快
     
-    # 日志配置
-    LOG_INTERVAL = 100
-    SAVE_BEST_ONLY = True
+    # 测试时增强
+    USE_TTA = True  # Test Time Augmentation
+    TTA_TIMES = 5  # TTA次数
     
     # ============================== 数据增强配置 ==============================
-    # 预训练数据增强
+    # 增强级别
+    AUGMENTATION_LEVEL = 'strong'  # 可选: 'basic', 'medium', 'strong'
+    
+    # 高级增强
+    USE_CUTMIX = True
+    CUTMIX_ALPHA = 1.0
+    USE_MIXUP = True
+    MIXUP_ALPHA = 0.2
+    
+    # 强数据增强配置
+    STRONG_AUGMENTATION = {
+        'randaugment_n': 2,
+        'randaugment_m': 10,
+        'cutout_n_holes': 1,
+        'cutout_length': 16,
+        'auto_augment_policy': 'imagenet',
+    }
+    
+    # 基础数据增强（保留原配置）
     PRETRAIN_AUGMENTATION = {
         'resize': (256, 256),
         'crop_scale': (0.2, 1.0),
@@ -124,7 +151,6 @@ class Config:
         }
     }
     
-    # 微调数据增强
     FINETUNE_AUGMENTATION = {
         'resize': (256, 256),
         'crop_size': 224,
@@ -142,6 +168,20 @@ class Config:
     NORMALIZE_MEAN = [0.485, 0.456, 0.406]
     NORMALIZE_STD = [0.229, 0.224, 0.225]
     
+    # ============================== 集成学习配置 ==============================
+    USE_ENSEMBLE = False  # 是否使用模型集成
+    ENSEMBLE_MODELS = [
+        'vit_base_patch16_224.dino',
+        'convnext_base.fb_in22k_ft_in1k',
+        'swin_base_patch4_window7_224'
+    ]
+    
+    # ============================== 知识蒸馏配置 ==============================
+    USE_KNOWLEDGE_DISTILLATION = False  # 是否使用知识蒸馏
+    TEACHER_MODEL = 'vit_large_patch16_224'  # 教师模型
+    DISTILLATION_TEMPERATURE = 4.0
+    DISTILLATION_ALPHA = 0.7  # 蒸馏损失权重
+    
     @classmethod
     def get_config_dict(cls):
         """获取所有配置参数的字典形式"""
@@ -156,9 +196,17 @@ class Config:
         print("="*60)
         print("配置参数:")
         print("="*60)
+        print(f"🔧 模型类型: {cls.MODEL_TYPE}")
+        print(f"🔧 预训练模型: {cls.PRETRAINED_MODEL_NAME if cls.USE_PRETRAINED_MODEL else '无'}")
+        print(f"🔧 使用混合精度: {cls.USE_AMP}")
+        print(f"🔧 使用SAM优化器: {cls.USE_SAM}")
+        print(f"🔧 数据增强级别: {cls.AUGMENTATION_LEVEL}")
+        print("="*60)
+        
         config_dict = cls.get_config_dict()
         for key, value in sorted(config_dict.items()):
-            print(f"{key}: {value}")
+            if not isinstance(value, dict):  # 跳过字典类型的配置
+                print(f"{key}: {value}")
         print("="*60)
     
     @classmethod

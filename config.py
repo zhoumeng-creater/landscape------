@@ -40,7 +40,7 @@ class Config:
     
     # 分类器配置
     CLASSIFIER_DROPOUT = 0.5
-    
+
     # ============================== 数据配置 ==============================
     # 图像配置
     IMG_SIZE = 224
@@ -113,6 +113,10 @@ class Config:
     # 测试时增强
     USE_TTA = True  # Test Time Augmentation
     TTA_TIMES = 5  # TTA次数
+    
+    # 日志配置
+    LOG_INTERVAL = 100
+    SAVE_BEST_ONLY = True
     
     # ============================== 数据增强配置 ==============================
     # 增强级别

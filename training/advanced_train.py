@@ -181,9 +181,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, epoch,
             torch.nn.utils.clip_grad_norm_(model.parameters(), Config.GRADIENT_CLIP)
             
             if use_sam:
-                # SAM第一步
-                scaler.step(optimizer.base_optimizer)
-                scaler.update()
+                # SAM第一步：只移动参数，不更新scaler
                 optimizer.first_step()
                 
                 # SAM第二步：重新计算梯度
@@ -205,6 +203,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scaler, epoch,
                 scaler.unscale_(optimizer.base_optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), Config.GRADIENT_CLIP)
                 optimizer.second_step()
+                scaler.update()
             else:
                 # 普通优化器步骤
                 scaler.step(optimizer)

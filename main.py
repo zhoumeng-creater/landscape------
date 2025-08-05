@@ -164,7 +164,7 @@ def main():
     
     # 获取数据变换
     if Config.AUGMENTATION_LEVEL == 'strong':
-        train_transform, val_transform, test_transform = get_advanced_transforms()
+        pretrain_transform, train_transform, val_transform, test_transform = get_advanced_transforms()
         print("📈 使用强数据增强策略")
     else:
         pretrain_transform, train_transform, val_test_transform = get_optimized_transforms()

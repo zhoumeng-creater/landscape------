@@ -71,15 +71,53 @@ def get_optimized_transforms():
     return pretrain_transform, train_transform, val_test_transform
 
 
+
 def get_advanced_transforms():
     """获取高级数据变换（强数据增强版本）
     
     Returns:
+        pretrain_transform: 预训练时的超强增强（新增）
         train_transform: 训练时的强增强
         val_transform: 验证时的标准变换
         test_transform: 测试时的标准变换（支持TTA）
     """
-    # 训练时的强增强
+    # 预训练时的超强增强（专门为I-JEPA设计）
+    pretrain_transform = transforms.Compose([
+        transforms.Resize((256, 256)),
+        # 更激进的裁剪
+        transforms.RandomResizedCrop(224, scale=(0.08, 1.0), ratio=(0.75, 1.33)),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomVerticalFlip(p=0.3),
+        transforms.RandomRotation(45),  # 更大的旋转角度
+        
+        # RandAugment - 最强级别
+        RandAugment(
+            num_ops=3,  # 增加操作数
+            magnitude=15  # 增加强度
+        ),
+        
+        # 额外的强增强
+        transforms.RandomApply([
+            transforms.ColorJitter(0.5, 0.5, 0.5, 0.3)  # 更强的色彩变化
+        ], p=0.9),
+        transforms.RandomApply([
+            transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 3.0))
+        ], p=0.5),
+        transforms.RandomGrayscale(p=0.2),
+        transforms.RandomApply([
+            transforms.RandomSolarize(threshold=128)
+        ], p=0.2),
+        
+        # Cutout - 更大的遮挡
+        transforms.ToTensor(),
+        Cutout(
+            n_holes=2,  # 多个洞
+            length=32   # 更大的洞
+        ),
+        transforms.Normalize(mean=Config.NORMALIZE_MEAN, std=Config.NORMALIZE_STD)
+    ])
+    
+    # 训练时的强增强（原来的实现）
     train_transform = transforms.Compose([
         transforms.Resize((256, 256)),
         transforms.RandomChoice([
@@ -132,8 +170,7 @@ def get_advanced_transforms():
         transforms.Normalize(mean=Config.NORMALIZE_MEAN, std=Config.NORMALIZE_STD)
     ])
     
-    return train_transform, val_transform, test_transform
-
+    return pretrain_transform, train_transform, val_transform, test_transform
 
 def get_tta_transforms():
     """获取测试时增强(TTA)的变换列表

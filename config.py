@@ -25,7 +25,7 @@ class Config:
     
     # ============================== 模型选择 ==============================
     # 模型类型选择
-    MODEL_TYPE = 'pretrained'  # 可选: 'ijepa', 'pretrained', 'ensemble', 'lightweight'
+    MODEL_TYPE = 'hybrid_ijepa'  # 可选: 'ijepa', 'hybrid_ijepa', 'pretrained', 'ensemble', 'lightweight'
     
     # 预训练模型配置
     PRETRAINED_MODEL_NAME = 'vit_base_patch16_224.dino'  # 推荐选项:
@@ -70,10 +70,10 @@ class Config:
     # ============================== 训练配置 ==============================
     # 训练模式
     USE_PRETRAINED_MODEL = True  # 是否使用预训练模型
-    SKIP_PRETRAIN = True  # 跳过I-JEPA预训练阶段
+    SKIP_PRETRAIN = False  # 跳过I-JEPA预训练阶段
     
     # 预训练配置（如果使用）
-    PRETRAIN_EPOCHS = 60
+    PRETRAIN_EPOCHS = 30
     PRETRAIN_LR = 3e-5
     PRETRAIN_WEIGHT_DECAY = 0.05
     

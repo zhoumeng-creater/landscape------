@@ -80,6 +80,15 @@ def create_model(num_classes, model_type='pretrained'):
         )
         return (ijepa_model, classifier), True
     
+    elif model_type == 'hybrid_ijepa':
+        # 新增：混合I-JEPA模型
+        from models.hybrid_ijepa import create_hybrid_ijepa
+        ijepa_model, classifier = create_hybrid_ijepa(
+            pretrained_model_name=Config.PRETRAINED_MODEL_NAME,
+            num_classes=num_classes
+        )
+        return (ijepa_model, classifier), True
+
     elif model_type == 'pretrained':
         # 预训练模型
         model = PretrainedVisionModel(

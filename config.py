@@ -76,6 +76,13 @@ class Config:
     PRETRAIN_EPOCHS = 30
     PRETRAIN_LR = 3e-5
     PRETRAIN_WEIGHT_DECAY = 0.05
+    PRETRAIN_BETAS = (0.9, 0.95)  # AdamW的beta参数 - 添加这一行！
+    
+    # I-JEPA特定配置 - 也需要添加这些
+    EMA_MOMENTUM = 0.996  # 目标编码器的EMA动量
+    WARMUP_EPOCHS = 5     # 学习率预热轮数
+    LOG_INTERVAL = 50     # 打印日志的间隔
+    PATIENCE_PRETRAIN = 10  # 预训练早停耐心值
     
     # 微调配置
     FINETUNE_EPOCHS = 30  # 使用预训练模型时可以减少

@@ -203,8 +203,17 @@ def update_target_encoder(context_encoder, target_encoder, momentum=0.996):
         momentum: EMA动量系数
     """
     with torch.no_grad():
+        # 检查target_encoder是否有encoder属性
+        if hasattr(target_encoder, 'encoder'):
+            # 原始I-JEPA的情况
+            target_params = target_encoder.encoder.parameters()
+        else:
+            # HybridIJEPA的情况 - 直接使用target_encoder的参数
+            target_params = target_encoder.parameters()
+        
+        # 执行EMA更新
         for param_c, param_t in zip(
             context_encoder.parameters(), 
-            target_encoder.encoder.parameters()
+            target_params
         ):
             param_t.data.mul_(momentum).add_(param_c.data, alpha=1.0 - momentum)

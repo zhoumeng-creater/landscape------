@@ -165,10 +165,13 @@ def main():
     # 获取数据变换
     if Config.AUGMENTATION_LEVEL == 'strong':
         pretrain_transform, train_transform, val_transform, test_transform = get_advanced_transforms()
+        # val_test_transform = val_transform  # 验证和测试使用相同的变换
         print("📈 使用强数据增强策略")
     else:
         pretrain_transform, train_transform, val_test_transform = get_optimized_transforms()
-        val_transform = test_transform = val_test_transform
+        # 为了统一，创建单独的验证和测试变换
+        val_transform = val_test_transform
+        test_transform = val_test_transform
         print("📈 使用标准数据增强策略")
     
     # ===== 模型创建 =====
@@ -228,8 +231,8 @@ def main():
         
         # 准备数据
         train_dataset = OptimizedGardenDataset(X_train, y_train, train_transform)
-        val_dataset = OptimizedGardenDataset(X_val, y_val, val_test_transform)
-        test_dataset = OptimizedGardenDataset(X_test, y_test, val_test_transform)
+        val_dataset = OptimizedGardenDataset(X_val, y_val, val_transform)
+        test_dataset = OptimizedGardenDataset(X_test, y_test, test_transform)
         
         # 创建数据加载器
         train_loader = create_balanced_dataloader(

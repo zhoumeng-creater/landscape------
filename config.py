@@ -28,8 +28,8 @@ class Config:
     MODEL_TYPE = 'hybrid_ijepa'  # 可选: 'ijepa', 'hybrid_ijepa', 'pretrained', 'ensemble', 'lightweight'
     
     # 预训练模型配置
-    PRETRAINED_MODEL_NAME = 'vit_base_patch16_224.dino'  # 推荐选项:
-    # - 'vit_base_patch16_224.dino' (最佳特征质量)
+    PRETRAINED_MODEL_NAME = 'vit_base_patch16_224'  # 推荐选项:
+    # - 'vit_base_patch16_224' (最佳特征质量)
     # - 'vit_base_patch16_clip_224.openai' (语义理解强)
     # - 'convnext_base.fb_in22k_ft_in1k' (细粒度分类好)
     # - 'swin_base_patch4_window7_224' (层次化特征)
@@ -185,7 +185,7 @@ class Config:
     # ============================== 集成学习配置 ==============================
     USE_ENSEMBLE = False  # 是否使用模型集成
     ENSEMBLE_MODELS = [
-        'vit_base_patch16_224.dino',
+        'vit_base_patch16_224',
         'convnext_base.fb_in22k_ft_in1k',
         'swin_base_patch4_window7_224'
     ]

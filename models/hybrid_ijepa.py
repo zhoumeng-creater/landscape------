@@ -225,7 +225,7 @@ def create_hybrid_ijepa(pretrained_model_name='vit_base_patch16_224',
 if __name__ == "__main__":
     # 创建模型
     ijepa, classifier = create_hybrid_ijepa(
-        pretrained_model_name='vit_base_patch16_224.dino',
+        pretrained_model_name='vit_base_patch16_224',
         num_classes=35
     )
     

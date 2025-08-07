@@ -13,7 +13,7 @@ class PretrainedVisionModel(nn.Module):
     
     这个模型将替代原来的I-JEPA + Classifier组合
     """
-    def __init__(self, model_name='vit_base_patch16_224.dino', num_classes=35, 
+    def __init__(self, model_name='vit_base_patch16_224', num_classes=35, 
                  feature_dim=768, dropout=0.5, freeze_layers=6):
         super().__init__()
         
@@ -127,7 +127,7 @@ class MultiModelEnsemble(nn.Module):
         
         # 使用不同的预训练模型
         self.models = nn.ModuleDict({
-            'dino': PretrainedVisionModel('vit_base_patch16_224.dino', num_classes),
+            'dino': PretrainedVisionModel('vit_base_patch16_224', num_classes),
             'clip': PretrainedVisionModel('vit_base_patch16_clip_224.openai', num_classes),
             'convnext': PretrainedVisionModel('convnext_base.fb_in22k_ft_in1k', num_classes),
         })

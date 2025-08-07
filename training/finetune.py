@@ -330,7 +330,7 @@ def load_finetune_checkpoint(ijepa_model, classifier, checkpoint_path=None):
         checkpoint_path = os.path.join(Config.CHECKPOINT_DIR, Config.FINETUNE_MODEL_PATH)
     
     try:
-        checkpoint = torch.load(checkpoint_path, map_location=Config.DEVICE)
+        checkpoint = torch.load(checkpoint_path, map_location=Config.DEVICE, weights_only=False)
         ijepa_model.load_state_dict(checkpoint['ijepa_state'])
         classifier.load_state_dict(checkpoint['classifier_state'])
         print(f"✅ 加载最佳模型，验证准确率: {checkpoint['val_accuracy']:.2f}%")

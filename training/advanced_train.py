@@ -420,7 +420,7 @@ def load_checkpoint(model, checkpoint_path=None):
         checkpoint_path = os.path.join(Config.CHECKPOINT_DIR, Config.PRETRAINED_MODEL_PATH)
     
     if os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path, map_location=Config.DEVICE)
+        checkpoint = torch.load(checkpoint_path, map_location=Config.DEVICE, weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'])
         print(f"✅ 加载模型检查点，验证准确率: {checkpoint['val_accuracy']:.2f}%")
     

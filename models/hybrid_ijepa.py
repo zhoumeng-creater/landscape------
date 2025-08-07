@@ -145,11 +145,11 @@ class HybridIJEPAModel(nn.Module):
 
 
 class PretrainedIJEPAClassifier(nn.Module):
-    """使用预训练I-JEPA的分类器"""
+    """使用预训练I-JEPA的分类器 - 修复版"""
     
-    def __init__(self, ijepa_model, num_classes=35, feature_dim=768, dropout=0.5):
+    def __init__(self, ijepa_model=None, num_classes=35, feature_dim=768, dropout=0.5):
         super().__init__()
-        self.ijepa = ijepa_model
+        self.ijepa = ijepa_model  # 可选的编码器
         
         # 注意力池化
         self.attention_pool = nn.MultiheadAttention(
@@ -170,8 +170,24 @@ class PretrainedIJEPAClassifier(nn.Module):
         )
         
     def forward(self, x):
-        # 提取I-JEPA特征
-        features = self.ijepa.encode(x)  # [B, N+1, D]
+        """
+        Args:
+            x: 输入，可以是：
+               - 图像 [B, C, H, W]
+               - 特征 [B, N+1, D]
+        
+        Returns:
+            logits: 分类结果 [B, num_classes]
+        """
+        # 判断输入类型
+        if x.dim() == 4:  # 图像输入 [B, C, H, W]
+            if self.ijepa is None:
+                raise ValueError("需要ijepa_model来编码图像")
+            features = self.ijepa.encode(x)
+        elif x.dim() == 3:  # 特征输入 [B, N+1, D]
+            features = x
+        else:
+            raise ValueError(f"不支持的输入维度: {x.dim()}")
         
         # 注意力池化
         pooled, _ = self.attention_pool(features, features, features)
@@ -179,7 +195,6 @@ class PretrainedIJEPAClassifier(nn.Module):
         
         # 分类
         logits = self.classifier(cls_features)
-        
         return logits
 
 

@@ -301,10 +301,11 @@ def save_pretrain_checkpoint(model, optimizer, epoch, loss, cosine_sim, feature_
         'epoch': epoch + 1,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'loss': loss,
-        'cosine_similarity': cosine_sim,
-        'feature_diversity': feature_std,
-        'training_time': training_time
+        # 确保所有值都是Python原生类型或PyTorch张量
+        'loss': float(loss) if hasattr(loss, 'item') else float(loss),
+        'cosine_similarity': float(cosine_sim) if hasattr(cosine_sim, 'item') else float(cosine_sim),
+        'feature_diversity': float(feature_std) if hasattr(feature_std, 'item') else float(feature_std),
+        'training_time': float(training_time)
     }
     
     # 确保目录存在
@@ -313,7 +314,6 @@ def save_pretrain_checkpoint(model, optimizer, epoch, loss, cosine_sim, feature_
     # 保存检查点
     checkpoint_path = os.path.join(Config.CHECKPOINT_DIR, Config.PRETRAIN_MODEL_PATH)
     torch.save(checkpoint, checkpoint_path)
-
 
 def load_pretrain_checkpoint(model, checkpoint_path=None):
     """加载预训练检查点
@@ -329,10 +329,21 @@ def load_pretrain_checkpoint(model, checkpoint_path=None):
         checkpoint_path = os.path.join(Config.CHECKPOINT_DIR, Config.PRETRAIN_MODEL_PATH)
     
     try:
-        checkpoint = torch.load(checkpoint_path, map_location=Config.DEVICE)
+        # 修复：添加 weights_only=False 参数
+        checkpoint = torch.load(checkpoint_path, map_location=Config.DEVICE, weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'])
         print(f"✅ 加载预训练模型，损失: {checkpoint['loss']:.4f}")
         return model
+    except FileNotFoundError:
+        print(f"⚠️ 检查点文件不存在: {checkpoint_path}")
+        return model
     except Exception as e:
         print(f"❌ 加载预训练模型失败: {e}")
-        return model
+        # 尝试使用weights_only=False
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=Config.DEVICE, weights_only=False)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            print(f"✅ 使用weights_only=False加载成功")
+            return model
+        except:
+            return model

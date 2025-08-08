@@ -1,5 +1,5 @@
 """
-微调模块 - 分类器微调训练
+微调模块 - 分类器微调训练（修复版）
 """
 import torch
 import torch.nn as nn
@@ -9,7 +9,7 @@ from config import Config
 
 
 def create_finetune_optimizer(ijepa_model, classifier, stage, learning_rate):
-    """创建微调优化器
+    """创建微调优化器 - 修复版
     
     Args:
         ijepa_model: I-JEPA模型
@@ -27,13 +27,79 @@ def create_finetune_optimizer(ijepa_model, classifier, stage, learning_rate):
         ]
     else:
         # 阶段2：微调预训练模型的最后几层 + 分类器
-        param_groups = [
-            {
-                'params': [p for n, p in ijepa_model.named_parameters() if p.requires_grad], 
-                'lr': learning_rate / Config.FINETUNE_LR_RATIO
-            },
-            {'params': classifier.parameters(), 'lr': learning_rate}
-        ]
+        # 需要区分不同类型的模型架构
+        
+        # 收集所有参数ID，避免重复
+        param_ids = set()
+        ijepa_params = []
+        classifier_only_params = []
+        
+        # 收集ijepa_model的可训练参数
+        for name, param in ijepa_model.named_parameters():
+            if param.requires_grad:
+                ijepa_params.append(param)
+                param_ids.add(id(param))
+        
+        # 收集classifier独有的参数（排除已经在ijepa_params中的参数）
+        for name, param in classifier.named_parameters():
+            if param.requires_grad:
+                if id(param) not in param_ids:
+                    classifier_only_params.append(param)
+                    param_ids.add(id(param))
+        
+        # 创建参数组
+        param_groups = []
+        
+        # 添加ijepa_model的参数（使用较小的学习率）
+        if ijepa_params:
+            param_groups.append({
+                'params': ijepa_params, 
+                'lr': learning_rate / Config.FINETUNE_LR_RATIO,
+                'name': 'ijepa_params'  # 添加名称以便调试
+            })
+        
+        # 添加classifier独有的参数（使用标准学习率）
+        if classifier_only_params:
+            param_groups.append({
+                'params': classifier_only_params, 
+                'lr': learning_rate,
+                'name': 'classifier_params'  # 添加名称以便调试
+            })
+        
+        # 如果没有找到任何独立参数（可能classifier完全依赖ijepa）
+        # 则使用所有classifier参数
+        if not param_groups:
+            # 这种情况下，可能是原始I-JEPA架构
+            param_groups = [
+                {
+                    'params': [p for n, p in ijepa_model.named_parameters() if p.requires_grad], 
+                    'lr': learning_rate / Config.FINETUNE_LR_RATIO,
+                    'name': 'ijepa_all'
+                },
+                {
+                    'params': classifier.parameters(), 
+                    'lr': learning_rate,
+                    'name': 'classifier_all'
+                }
+            ]
+            
+            # 再次检查是否有重复参数
+            ijepa_param_ids = {id(p) for n, p in ijepa_model.named_parameters() if p.requires_grad}
+            classifier_param_ids = {id(p) for p in classifier.parameters()}
+            
+            # 如果有重复，只使用classifier参数
+            if ijepa_param_ids & classifier_param_ids:
+                print("⚠️ 检测到参数重复，只使用classifier参数")
+                param_groups = [
+                    {'params': classifier.parameters(), 'lr': learning_rate}
+                ]
+        
+        # 打印参数组信息以便调试
+        print(f"📊 参数组信息:")
+        for i, group in enumerate(param_groups):
+            param_count = len(list(group['params']))
+            group_name = group.get('name', f'group_{i}')
+            print(f"  {group_name}: {param_count} 个参数, lr={group['lr']:.2e}")
     
     optimizer = optim.AdamW(param_groups, weight_decay=Config.FINETUNE_WEIGHT_DECAY)
     return optimizer
@@ -86,11 +152,21 @@ def train_epoch(ijepa_model, classifier, train_loader, criterion, optimizer, dev
         # 反向传播
         loss.backward()
         
-        # 梯度裁剪
-        params_to_clip = list(classifier.parameters())
+        # 梯度裁剪 - 需要获取所有参与训练的参数
+        params_to_clip = []
+        
+        # 收集所有需要裁剪的参数
         if epoch >= Config.FINETUNE_STAGE2_EPOCH:
-            params_to_clip.extend([p for p in ijepa_model.parameters() if p.requires_grad])
-        torch.nn.utils.clip_grad_norm_(params_to_clip, max_norm=Config.GRADIENT_CLIP)
+            # 阶段2：包括ijepa和classifier的参数
+            for param_group in optimizer.param_groups:
+                params_to_clip.extend(param_group['params'])
+        else:
+            # 阶段1：只有classifier的参数
+            params_to_clip = list(classifier.parameters())
+        
+        # 应用梯度裁剪
+        if params_to_clip:
+            torch.nn.utils.clip_grad_norm_(params_to_clip, max_norm=Config.GRADIENT_CLIP)
         
         optimizer.step()
         
@@ -157,7 +233,7 @@ def validate(ijepa_model, classifier, val_loader, criterion, device):
 
 def optimized_finetune_classifier(ijepa_model, classifier, train_loader, val_loader, 
                                  num_epochs=None, learning_rate=None):
-    """优化的分类器微调
+    """优化的分类器微调（修复版）
     
     Args:
         ijepa_model: I-JEPA模型
@@ -214,19 +290,34 @@ def optimized_finetune_classifier(ijepa_model, classifier, train_loader, val_loa
             
             # 解冻最后几层
             for name, param in ijepa_model.named_parameters():
-                if 'blocks.10' in name or 'blocks.11' in name or 'feature_enhancer' in name:
-                    param.requires_grad = True
+                # 根据模型类型决定解冻策略
+                if hasattr(ijepa_model, 'context_encoder'):
+                    # 原始I-JEPA或HybridIJEPA
+                    if 'blocks.10' in name or 'blocks.11' in name or 'feature_enhancer' in name:
+                        param.requires_grad = True
+                        print(f"  解冻层: {name}")
+                else:
+                    # 其他模型类型
+                    if 'layer4' in name or 'head' in name:
+                        param.requires_grad = True
+                        print(f"  解冻层: {name}")
             
-            # 重新创建优化器
+            # 重新创建优化器（修复版）
             optimizer = create_finetune_optimizer(
                 ijepa_model, classifier, stage=2, learning_rate=learning_rate
             )
             
             # 重新创建调度器
             remaining_epochs = num_epochs - Config.FINETUNE_STAGE2_EPOCH
+            
+            # 获取所有学习率
+            max_lrs = []
+            for group in optimizer.param_groups:
+                max_lrs.append(group['lr'])
+            
             scheduler = optim.lr_scheduler.OneCycleLR(
                 optimizer, 
-                max_lr=[learning_rate / Config.FINETUNE_LR_RATIO, learning_rate], 
+                max_lr=max_lrs if len(max_lrs) > 1 else max_lrs[0], 
                 epochs=remaining_epochs, 
                 steps_per_epoch=len(train_loader)
             )
@@ -238,8 +329,7 @@ def optimized_finetune_classifier(ijepa_model, classifier, train_loader, val_loa
         )
         
         # 更新学习率
-        if epoch < Config.FINETUNE_STAGE2_EPOCH or epoch >= Config.FINETUNE_STAGE2_EPOCH:
-            scheduler.step()
+        scheduler.step()
         
         # 验证
         val_loss, val_acc = validate(
